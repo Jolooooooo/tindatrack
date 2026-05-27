@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
+import * as XLSX from "xlsx";
 
 const SUPABASE_URL = "https://ygxmiuguerjdrgfubvwu.supabase.co";
 const SUPABASE_KEY = "sb_publishable_2BJPARkVzhGvDqKkb5Bx5Q_cSqd4iTg";
@@ -11,7 +12,7 @@ const CSS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
     --bg: #0d0f0e; --surface: #151816; --card: #1b1e1c; --border: #2a2e2b;
-    --accent: #b5f23e; --accent2: #3ef2a0; --danger: #f25a3e;
+    --accent: #b5f23e; --accent2: #3ef2a0; --danger: #f25a3e; --warn: #f2a53e;
     --text: #e8ede9; --muted: #6b7570;
     --font-h: 'Syne', sans-serif; --font-b: 'DM Sans', sans-serif; --r: 12px;
   }
@@ -58,6 +59,7 @@ const CSS = `
   .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
   .btn-danger { background: rgba(242,90,62,0.15); color: var(--danger); border: 1px solid rgba(242,90,62,0.25); }
   .btn-danger:hover { background: rgba(242,90,62,0.25); }
+  .btn-warn { background: rgba(242,165,62,0.15); color: var(--warn); border: 1px solid rgba(242,165,62,0.25); }
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
   .table-wrap { overflow-x: auto; }
@@ -72,10 +74,9 @@ const CSS = `
   .login-sub { font-size: 13px; color: var(--muted); margin-bottom: 32px; }
   .login-footer { font-size: 12px; color: var(--muted); text-align: center; margin-top: 20px; }
   .login-footer a { color: var(--accent); cursor: pointer; }
-  .scanner-area { border: 2px dashed var(--border); border-radius: var(--r); padding: 32px; text-align: center; transition: border-color 0.2s; cursor: pointer; }
+  .scanner-area { border: 2px dashed var(--border); border-radius: var(--r); padding: 24px; text-align: center; transition: border-color 0.2s; cursor: pointer; }
   .scanner-area.active { border-color: var(--accent); background: rgba(181,242,62,0.04); }
-  .scanner-icon { font-size: 36px; margin-bottom: 12px; }
-  .scanner-feedback { margin-top: 16px; padding: 12px 16px; border-radius: var(--r); font-size: 13px; font-weight: 500; }
+  .scanner-feedback { margin-top: 12px; padding: 10px 14px; border-radius: var(--r); font-size: 13px; font-weight: 500; }
   .feedback-success { background: rgba(62,242,160,0.1); color: var(--accent2); border: 1px solid rgba(62,242,160,0.2); }
   .feedback-error { background: rgba(242,90,62,0.1); color: var(--danger); border: 1px solid rgba(242,90,62,0.25); }
   .forecast-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 600; margin-bottom: 20px; }
@@ -89,6 +90,7 @@ const CSS = `
   .alert-success { background: rgba(62,242,160,0.08); color: var(--accent2); border: 1px solid rgba(62,242,160,0.2); }
   .alert-error { background: rgba(242,90,62,0.08); color: var(--danger); border: 1px solid rgba(242,90,62,0.2); }
   .alert-info { background: rgba(181,242,62,0.08); color: var(--accent); border: 1px solid rgba(181,242,62,0.2); }
+  .alert-warn { background: rgba(242,165,62,0.08); color: var(--warn); border: 1px solid rgba(242,165,62,0.2); }
   .stock-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px; font-size: 11.5px; font-weight: 500; }
   .stock-ok { background: rgba(62,242,160,0.1); color: var(--accent2); }
   .stock-low { background: rgba(242,165,62,0.12); color: #f2a53e; }
@@ -96,7 +98,7 @@ const CSS = `
   .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .loading-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; background: var(--bg); }
-  .tab-row { display: flex; gap: 8px; margin-bottom: 20px; }
+  .tab-row { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
   .tab-btn { padding: 8px 18px; border-radius: var(--r); font-size: 13px; font-weight: 500; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; transition: all 0.15s; }
   .tab-btn.active { background: var(--accent); color: #0d0f0e; font-weight: 700; border-color: var(--accent); }
   .tab-btn:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
@@ -109,18 +111,42 @@ const CSS = `
   .empty-icon { font-size: 48px; margin-bottom: 16px; }
   .empty-title { font-family: var(--font-h); font-size: 18px; font-weight: 700; margin-bottom: 8px; }
   .empty-sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
-  .bulk-grid { display: grid; grid-template-columns: repeat(5, 1fr) 36px; gap: 8px; align-items: center; margin-bottom: 8px; }
-  .bulk-header { display: grid; grid-template-columns: repeat(5, 1fr) 36px; gap: 8px; margin-bottom: 6px; }
   .search-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: var(--card); border: 1px solid var(--border); border-radius: var(--r); z-index: 50; max-height: 200px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
   .search-option { padding: 10px 14px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.1s; }
   .search-option:last-child { border-bottom: none; }
   .search-option:hover { background: rgba(181,242,62,0.06); color: var(--accent); }
+  /* POS */
+  .pos-wrap { display: grid; grid-template-columns: 1fr 360px; gap: 20px; min-height: 70vh; }
+  .pos-cart { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); display: flex; flex-direction: column; }
+  .pos-cart-header { padding: 16px 20px; border-bottom: 1px solid var(--border); font-family: var(--font-h); font-weight: 700; font-size: 15px; }
+  .pos-cart-items { flex: 1; overflow-y: auto; padding: 12px; }
+  .pos-cart-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; margin-bottom: 6px; background: var(--surface); border: 1px solid var(--border); }
+  .pos-cart-item-name { flex: 1; font-size: 13.5px; font-weight: 500; }
+  .pos-cart-item-price { font-family: var(--font-h); font-weight: 700; color: var(--accent); font-size: 14px; min-width: 70px; text-align: right; }
+  .pos-cart-footer { padding: 16px 20px; border-top: 1px solid var(--border); }
+  .pos-total { font-family: var(--font-h); font-size: 28px; font-weight: 800; color: var(--accent); margin-bottom: 12px; }
+  .pos-total-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; }
+  .qty-control { display: flex; align-items: center; gap: 4px; }
+  .qty-btn { width: 26px; height: 26px; border-radius: 6px; background: var(--border); color: var(--text); font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; border: none; transition: background 0.1s; }
+  .qty-btn:hover { background: var(--accent); color: #0d0f0e; }
+  .qty-num { font-family: var(--font-h); font-weight: 700; font-size: 14px; min-width: 24px; text-align: center; }
+  /* help page */
+  .help-section { margin-bottom: 28px; }
+  .help-step { display: flex; gap: 16px; margin-bottom: 16px; align-items: flex-start; }
+  .help-num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #0d0f0e; font-family: var(--font-h); font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+  .help-text { flex: 1; }
+  .help-text strong { font-weight: 600; color: var(--text); display: block; margin-bottom: 4px; }
+  .help-text span { font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .help-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 99px; font-size: 11px; font-weight: 600; margin-right: 6px; margin-bottom: 4px; }
+  .drop-zone { border: 2px dashed var(--border); border-radius: var(--r); padding: 32px; text-align: center; transition: all 0.2s; cursor: pointer; }
+  .drop-zone.drag-over { border-color: var(--accent); background: rgba(181,242,62,0.04); }
   @media (max-width: 900px) {
     .stats-grid { grid-template-columns: 1fr 1fr; }
     .sidebar { width: 60px; }
     .sidebar-logo, .nav-item span, .nav-section, .user-info { display: none; }
     .main { margin-left: 60px; padding: 24px 16px; }
     .grid-2 { grid-template-columns: 1fr; }
+    .pos-wrap { grid-template-columns: 1fr; }
     .item-row { grid-template-columns: 1fr 60px 60px 60px 36px; }
   }
 `;
@@ -134,9 +160,7 @@ function linearRegression(points) {
   const sumXY = xs.reduce((a, x, i) => a + x * ys[i], 0), sumXX = xs.reduce((a, x) => a + x * x, 0);
   const denom = n * sumXX - sumX * sumX;
   if (denom === 0) return { slope: 0, intercept: sumY / n };
-  const slope = (n * sumXY - sumX * sumY) / denom;
-  const intercept = (sumY - slope * sumX) / n;
-  return { slope, intercept };
+  return { slope: (n * sumXY - sumX * sumY) / denom, intercept: (sumY - (n * sumXY - sumX * sumY) / denom * sumX) / n };
 }
 
 function buildChartData(history, forecastDays = 7) {
@@ -146,8 +170,7 @@ function buildChartData(history, forecastDays = 7) {
   const lastDate = new Date();
   for (let i = 1; i <= forecastDays; i++) {
     const d = new Date(); d.setDate(lastDate.getDate() + i);
-    const label = d.toLocaleDateString("en-PH", { month: "short", day: "numeric" });
-    base.push({ date: label, actual: null, predicted: Math.max(0, Math.round(intercept + slope * (history.length - 1 + i))) });
+    base.push({ date: d.toLocaleDateString("en-PH", { month: "short", day: "numeric" }), actual: null, predicted: Math.max(0, Math.round(intercept + slope * (history.length - 1 + i))) });
   }
   return { chartData: base, slope };
 }
@@ -161,6 +184,35 @@ function CustomTooltip({ active, payload, label }) {
       <div className="tooltip-label">{label}</div>
       {actual?.value != null && <div className="tooltip-value">₱{actual.value.toLocaleString()}</div>}
       {pred?.value != null && <div className="tooltip-pred">Forecast: ₱{pred.value.toLocaleString()}</div>}
+    </div>
+  );
+}
+
+function ProductSearch({ products, value, onChange, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef();
+  const filtered = products.filter(p => p.name.toLowerCase().includes(value.toLowerCase()) || p.barcode?.includes(value));
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  return (
+    <div style={{ position: "relative" }} ref={ref}>
+      <input className="input-field" placeholder="Search product..." value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)} />
+      {open && filtered.length > 0 && (
+        <div className="search-dropdown">
+          {filtered.map(p => (
+            <div key={p.id} className="search-option" onMouseDown={() => { onSelect(p); setOpen(false); }}>
+              <span style={{ fontWeight: 500 }}>{p.name}</span>
+              <span style={{ color: "var(--accent)", marginLeft: 8 }}>₱{p.price}</span>
+              <span style={{ color: "var(--muted)", fontSize: 11, marginLeft: 8 }}>{p.stock} {p.unit} left</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -184,9 +236,7 @@ function LoginPage({ onLogin }) {
         if (data.user) {
           await supabase.from("profiles").upsert({ id: data.user.id, store_name: form.storeName });
           onLogin({ ...data.user, storeName: form.storeName });
-        } else {
-          setErr("Check your email to confirm your account, then sign in.");
-        }
+        } else { setErr("Check your email to confirm your account, then sign in."); }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
         if (error) { setErr(error.message); return; }
@@ -244,50 +294,29 @@ function Dashboard({ sales, products }) {
 
   return (
     <div>
-      <div className="page-header">
-        <div className="page-title">Dashboard</div>
-        <div className="page-sub">Sales overview and 7-day forecast</div>
-      </div>
+      <div className="page-header"><div className="page-title">Dashboard</div><div className="page-sub">Sales overview and 7-day forecast</div></div>
       {sales.length === 0 && (
         <div className="card" style={{ marginBottom: 28 }}>
           <div className="empty-state">
             <div className="empty-icon">📊</div>
             <div className="empty-title">No sales data yet</div>
             <div className="empty-sub">Start recording your daily sales to see forecasts and trends here.</div>
-            <div style={{ color: "var(--accent)", fontSize: 13, fontWeight: 600 }}>→ Go to "Record Sales" to add your first entry</div>
+            <div style={{ color: "var(--accent)", fontSize: 13, fontWeight: 600 }}>→ Go to "Record Sales" or use the POS to start selling</div>
           </div>
         </div>
       )}
       {sales.length > 0 && (
         <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-label">Today's Sales</div>
-            <div className="stat-value" style={{ color: "var(--accent)" }}>₱{todaySales.toLocaleString()}</div>
-            <div className={`stat-badge ${Number(pct) >= 0 ? "badge-up" : "badge-down"}`}>{Number(pct) >= 0 ? "▲" : "▼"} {Math.abs(pct)}% vs yesterday</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">This Week</div>
-            <div className="stat-value">₱{weekTotal.toLocaleString()}</div>
-            <div className="stat-badge badge-neutral">Last 7 days</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Sales Trend</div>
-            <div className="stat-value" style={{ color: trending ? "var(--accent2)" : "var(--danger)", fontSize: 20 }}>{trending ? "↑ Going up" : "↓ Going down"}</div>
-            <div className={`stat-badge ${trending ? "badge-up" : "badge-down"}`}>{trending ? "Positive" : "Negative"} slope</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Stock Alerts</div>
-            <div className="stat-value" style={{ color: outStock > 0 ? "var(--danger)" : "var(--accent2)" }}>{lowStock + outStock}</div>
-            <div className="stat-badge badge-down">{outStock} out · {lowStock} low</div>
-          </div>
+          <div className="stat-card"><div className="stat-label">Today's Sales</div><div className="stat-value" style={{ color: "var(--accent)" }}>₱{todaySales.toLocaleString()}</div><div className={`stat-badge ${Number(pct) >= 0 ? "badge-up" : "badge-down"}`}>{Number(pct) >= 0 ? "▲" : "▼"} {Math.abs(pct)}% vs yesterday</div></div>
+          <div className="stat-card"><div className="stat-label">This Week</div><div className="stat-value">₱{weekTotal.toLocaleString()}</div><div className="stat-badge badge-neutral">Last 7 days</div></div>
+          <div className="stat-card"><div className="stat-label">Sales Trend</div><div className="stat-value" style={{ color: trending ? "var(--accent2)" : "var(--danger)", fontSize: 20 }}>{trending ? "↑ Going up" : "↓ Going down"}</div><div className={`stat-badge ${trending ? "badge-up" : "badge-down"}`}>{trending ? "Positive" : "Negative"} slope</div></div>
+          <div className="stat-card"><div className="stat-label">Stock Alerts</div><div className="stat-value" style={{ color: outStock > 0 ? "var(--danger)" : "var(--accent2)" }}>{lowStock + outStock}</div><div className="stat-badge badge-down">{outStock} out · {lowStock} low</div></div>
         </div>
       )}
       {sales.length >= 3 && (
         <div className="card">
           <div className="card-title">Sales history + 7-day forecast</div>
-          <div className={`forecast-pill ${trending ? "fp-up" : "fp-down"}`}>
-            {trending ? "📈 Sales predicted to go UP next week" : "📉 Sales predicted to go DOWN next week"}
-          </div>
+          <div className={`forecast-pill ${trending ? "fp-up" : "fp-down"}`}>{trending ? "📈 Sales predicted to go UP next week" : "📉 Sales predicted to go DOWN next week"}</div>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
@@ -309,41 +338,184 @@ function Dashboard({ sales, products }) {
         <div className="card" style={{ textAlign: "center", padding: "32px 24px" }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>📈</div>
           <div style={{ fontFamily: "var(--font-h)", fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Almost there!</div>
-          <div style={{ color: "var(--muted)", fontSize: 13 }}>Add at least 3 days of sales data to see your forecast chart. You have {sales.length} so far!</div>
+          <div style={{ color: "var(--muted)", fontSize: 13 }}>Add at least 3 days of sales data to see your forecast. You have {sales.length} so far!</div>
         </div>
       )}
     </div>
   );
 }
 
-// ── PRODUCT SEARCH DROPDOWN ───────────────────────────────────────────────────
-function ProductSearch({ products, value, onChange, onSelect }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef();
-  const filtered = products.filter(p => p.name.toLowerCase().includes(value.toLowerCase()) || p.barcode?.includes(value));
+// ── POS PAGE ──────────────────────────────────────────────────────────────────
+function POSPage({ products, onUpdateProducts, onAddSale, userId }) {
+  const [cart, setCart] = useState([]);
+  const [scanCode, setScanCode] = useState("");
+  const [scanFocus, setScanFocus] = useState(false);
+  const [feedback, setFeedback] = useState(null);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [receipt, setReceipt] = useState(null);
+  const scanRef = useRef();
 
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  const total = cart.reduce((s, i) => s + i.qty * i.price, 0);
+
+  const addToCart = (prod) => {
+    if (prod.stock <= 0) return setFeedback({ type: "error", text: `${prod.name} is out of stock!` });
+    setCart(prev => {
+      const existing = prev.find(i => i.id === prod.id);
+      if (existing) {
+        if (existing.qty >= prod.stock) return setFeedback({ type: "error", text: `Only ${prod.stock} ${prod.unit} of ${prod.name} in stock!` }) || prev;
+        return prev.map(i => i.id === prod.id ? { ...i, qty: i.qty + 1 } : i);
+      }
+      return [...prev, { ...prod, qty: 1 }];
+    });
+    setFeedback({ type: "success", text: `✓ ${prod.name} added to cart` });
+    setTimeout(() => setFeedback(null), 2000);
+  };
+
+  const handleScan = useCallback((code) => {
+    if (!code.trim()) return;
+    const prod = products.find(p => p.barcode === code.trim());
+    if (prod) addToCart(prod);
+    else setFeedback({ type: "error", text: `Barcode ${code} not found in inventory` });
+    setScanCode("");
+    setTimeout(() => setFeedback(null), 2500);
+  }, [products]);
+
+  const updateQty = (id, delta) => {
+    setCart(prev => prev.map(i => i.id === id ? { ...i, qty: Math.max(1, i.qty + delta) } : i));
+  };
+  const removeFromCart = (id) => setCart(prev => prev.filter(i => i.id !== id));
+
+  const checkout = async () => {
+    if (!cart.length) return;
+    setLoading(true);
+    const today = new Date().toISOString().slice(0, 10);
+    const note = cart.map(i => `${i.name} x${i.qty}`).join(", ");
+    const entry = { user_id: userId, date: today, amount: total, note };
+    const { error } = await supabase.from("sales").insert(entry);
+    if (error) { setLoading(false); return setFeedback({ type: "error", text: error.message }); }
+    for (const item of cart) {
+      const newStock = item.stock - item.qty;
+      await supabase.from("products").update({ stock: Math.max(0, newStock) }).eq("id", item.id);
+    }
+    const updatedProducts = products.map(p => {
+      const sold = cart.find(i => i.id === p.id);
+      return sold ? { ...p, stock: Math.max(0, p.stock - sold.qty) } : p;
+    });
+    onUpdateProducts(updatedProducts);
+    onAddSale(entry);
+    setReceipt({ items: [...cart], total, date: today });
+    setCart([]);
+    setLoading(false);
+  };
+
+  const filtered = search ? products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode?.includes(search)) : products;
+
+  if (receipt) return (
+    <div>
+      <div className="page-header"><div className="page-title">POS — Point of Sale</div></div>
+      <div className="card" style={{ maxWidth: 480, margin: "0 auto", textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>🧾</div>
+        <div style={{ fontFamily: "var(--font-h)", fontSize: 20, fontWeight: 800, color: "var(--accent2)", marginBottom: 4 }}>Sale Complete!</div>
+        <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 24 }}>{receipt.date}</div>
+        <div className="table-wrap" style={{ marginBottom: 16 }}>
+          <table>
+            <thead><tr><th>Item</th><th>Qty</th><th>Subtotal</th></tr></thead>
+            <tbody>
+              {receipt.items.map((i, idx) => (
+                <tr key={idx}>
+                  <td>{i.name}</td>
+                  <td style={{ color: "var(--muted)" }}>{i.qty}</td>
+                  <td style={{ fontFamily: "var(--font-h)", fontWeight: 700, color: "var(--accent)" }}>₱{(i.qty * i.price).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ fontFamily: "var(--font-h)", fontSize: 28, fontWeight: 800, color: "var(--accent)", marginBottom: 20 }}>Total: ₱{receipt.total.toLocaleString()}</div>
+        <button className="btn btn-primary" style={{ justifyContent: "center" }} onClick={() => setReceipt(null)}>New Sale →</button>
+      </div>
+    </div>
+  );
 
   return (
-    <div style={{ position: "relative" }} ref={ref}>
-      <input className="input-field" placeholder="Search product..." value={value}
-        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)} />
-      {open && filtered.length > 0 && (
-        <div className="search-dropdown">
-          {filtered.map(p => (
-            <div key={p.id} className="search-option" onMouseDown={() => { onSelect(p); setOpen(false); }}>
-              <span style={{ fontWeight: 500 }}>{p.name}</span>
-              <span style={{ color: "var(--accent)", marginLeft: 8 }}>₱{p.price}</span>
-              <span style={{ color: "var(--muted)", fontSize: 11, marginLeft: 8 }}>{p.stock} {p.unit} left</span>
+    <div>
+      <div className="page-header"><div className="page-title">POS — Point of Sale</div><div className="page-sub">Scan barcodes or search products to build a sale</div></div>
+      <div className="pos-wrap">
+        {/* Left: product selector */}
+        <div>
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-title">Barcode Scanner</div>
+            <div className={`scanner-area ${scanFocus ? "active" : ""}`} onClick={() => scanRef.current?.focus()}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>📷</div>
+              <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>{scanFocus ? "Ready — scan now" : "Click to activate scanner"}</div>
+              <input ref={scanRef} className="input-field" style={{ maxWidth: 280, margin: "0 auto", textAlign: "center", letterSpacing: 2 }}
+                placeholder="Barcode..." value={scanCode}
+                onChange={(e) => setScanCode(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleScan(scanCode)}
+                onFocus={() => setScanFocus(true)} onBlur={() => setScanFocus(false)} />
             </div>
-          ))}
+            {feedback && <div className={`scanner-feedback ${feedback.type === "success" ? "feedback-success" : "feedback-error"}`}>{feedback.text}</div>}
+          </div>
+
+          <div className="card">
+            <div className="card-title">Or search and click a product</div>
+            <div className="input-group">
+              <input className="input-field" placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
+              {filtered.map(p => (
+                <button key={p.id} onClick={() => addToCart(p)} style={{
+                  background: p.stock === 0 ? "rgba(42,46,43,0.5)" : "var(--surface)",
+                  border: `1px solid ${p.stock === 0 ? "var(--border)" : "var(--border)"}`,
+                  borderRadius: "var(--r)", padding: "12px", textAlign: "left", cursor: p.stock === 0 ? "not-allowed" : "pointer",
+                  opacity: p.stock === 0 ? 0.5 : 1, transition: "border-color 0.15s"
+                }}
+                  onMouseEnter={e => { if (p.stock > 0) e.currentTarget.style.borderColor = "var(--accent)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, color: "var(--text)" }}>{p.name}</div>
+                  <div style={{ color: "var(--accent)", fontFamily: "var(--font-h)", fontWeight: 700, fontSize: 14 }}>₱{p.price}</div>
+                  <div style={{ fontSize: 11, color: p.stock === 0 ? "var(--danger)" : "var(--muted)", marginTop: 2 }}>{p.stock === 0 ? "Out of stock" : `${p.stock} ${p.unit} left`}</div>
+                </button>
+              ))}
+              {filtered.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13, gridColumn: "1/-1", padding: "16px 0" }}>No products found. Add products in Inventory first.</div>}
+            </div>
+          </div>
         </div>
-      )}
+
+        {/* Right: cart */}
+        <div className="pos-cart">
+          <div className="pos-cart-header">🛒 Cart ({cart.length} item{cart.length !== 1 ? "s" : ""})</div>
+          <div className="pos-cart-items">
+            {cart.length === 0 && (
+              <div style={{ textAlign: "center", padding: "32px 16px", color: "var(--muted)", fontSize: 13 }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>🛒</div>
+                Scan a barcode or click a product to add it here
+              </div>
+            )}
+            {cart.map(item => (
+              <div key={item.id} className="pos-cart-item">
+                <div className="pos-cart-item-name">{item.name}</div>
+                <div className="qty-control">
+                  <button className="qty-btn" onClick={() => updateQty(item.id, -1)}>−</button>
+                  <span className="qty-num">{item.qty}</span>
+                  <button className="qty-btn" onClick={() => updateQty(item.id, 1)}>+</button>
+                </div>
+                <div className="pos-cart-item-price">₱{(item.qty * item.price).toLocaleString()}</div>
+                <button onClick={() => removeFromCart(item.id)} style={{ color: "var(--danger)", fontSize: 16, padding: "0 4px" }}>✕</button>
+              </div>
+            ))}
+          </div>
+          <div className="pos-cart-footer">
+            <div className="pos-total-label">Total</div>
+            <div className="pos-total">₱{total.toLocaleString()}</div>
+            <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center", fontSize: 15, padding: "14px" }} onClick={checkout} disabled={loading || cart.length === 0}>
+              {loading ? "Processing..." : `Checkout — ₱${total.toLocaleString()}`}
+            </button>
+            {cart.length > 0 && <button className="btn btn-danger" style={{ width: "100%", justifyContent: "center", marginTop: 8 }} onClick={() => setCart([])}>Clear Cart</button>}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -353,28 +525,23 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
   const [tab, setTab] = useState("quick");
   const [msg, setMsg] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  // Quick sale
   const [qForm, setQForm] = useState({ date: new Date().toISOString().slice(0, 10), amount: "", note: "" });
-
-  // Itemized sale
   const [iDate, setIDate] = useState(new Date().toISOString().slice(0, 10));
   const [iNote, setINote] = useState("");
   const [items, setItems] = useState([{ search: "", product: null, qty: 1, price: 0 }]);
+  const [dragOver, setDragOver] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const fileRef = useRef();
 
   const iTotal = items.reduce((s, i) => s + (i.product ? i.qty * i.price : 0), 0);
 
   const addItem = () => setItems([...items, { search: "", product: null, qty: 1, price: 0 }]);
   const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx));
   const updateItem = (idx, changes) => setItems(items.map((it, i) => i === idx ? { ...it, ...changes } : it));
-
-  const selectProduct = (idx, prod) => {
-    updateItem(idx, { search: prod.name, product: prod, price: prod.price, qty: 1 });
-  };
+  const selectProduct = (idx, prod) => updateItem(idx, { search: prod.name, product: prod, price: prod.price, qty: 1 });
 
   const submitQuick = async () => {
-    if (!qForm.amount || isNaN(qForm.amount) || Number(qForm.amount) <= 0)
-      return setMsg({ type: "error", text: "Enter a valid sales amount (₱)." });
+    if (!qForm.amount || isNaN(qForm.amount) || Number(qForm.amount) <= 0) return setMsg({ type: "error", text: "Enter a valid sales amount (₱)." });
     setLoading(true);
     const entry = { user_id: userId, date: qForm.date, amount: Number(qForm.amount), note: qForm.note };
     const { error } = await supabase.from("sales").insert(entry);
@@ -388,37 +555,78 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
 
   const submitItemized = async () => {
     const validItems = items.filter(i => i.product && i.qty > 0);
-    if (!validItems.length) return setMsg({ type: "error", text: "Add at least one product to the sale." });
-
-    // Check stock
+    if (!validItems.length) return setMsg({ type: "error", text: "Add at least one product." });
     for (const it of validItems) {
-      if (it.qty > it.product.stock)
-        return setMsg({ type: "error", text: `Not enough stock for ${it.product.name}. Only ${it.product.stock} ${it.product.unit} left.` });
+      if (it.qty > it.product.stock) return setMsg({ type: "error", text: `Not enough stock for ${it.product.name}. Only ${it.product.stock} left.` });
     }
-
     setLoading(true);
     const total = validItems.reduce((s, i) => s + i.qty * i.price, 0);
     const note = iNote || validItems.map(i => `${i.product.name} x${i.qty}`).join(", ");
     const entry = { user_id: userId, date: iDate, amount: total, note };
     const { error } = await supabase.from("sales").insert(entry);
     if (error) { setLoading(false); return setMsg({ type: "error", text: error.message }); }
-
-    // Deduct stock
-    for (const it of validItems) {
-      const newStock = it.product.stock - it.qty;
-      await supabase.from("products").update({ stock: newStock }).eq("id", it.product.id);
-    }
-    const updatedProducts = products.map(p => {
-      const sold = validItems.find(i => i.product.id === p.id);
-      return sold ? { ...p, stock: p.stock - sold.qty } : p;
-    });
-    onUpdateProducts(updatedProducts);
+    for (const it of validItems) await supabase.from("products").update({ stock: it.product.stock - it.qty }).eq("id", it.product.id);
+    onUpdateProducts(products.map(p => { const s = validItems.find(i => i.product.id === p.id); return s ? { ...p, stock: p.stock - s.qty } : p; }));
     onAdd(entry);
     setLoading(false);
-    setMsg({ type: "success", text: `₱${total.toLocaleString()} itemized sale recorded ✓ — stock updated automatically` });
+    setMsg({ type: "success", text: `₱${total.toLocaleString()} itemized sale recorded ✓` });
     setItems([{ search: "", product: null, qty: 1, price: 0 }]);
     setINote("");
     setTimeout(() => setMsg(null), 4000);
+  };
+
+  const parseFile = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: "binary" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        const parsed = rows.map(r => ({
+          date: r.date || r.Date || r.DATE || "",
+          amount: Number(r.amount || r.Amount || r.AMOUNT || r.sales || r.Sales || 0),
+          note: r.note || r.Note || r.NOTE || ""
+        })).filter(r => r.date && r.amount > 0);
+        if (!parsed.length) return setMsg({ type: "error", text: "No valid rows found. Make sure your file has 'date' and 'amount' columns." });
+        setPreview(parsed);
+        setTab("import");
+      } catch (err) {
+        setMsg({ type: "error", text: "Could not read file. Make sure it's a valid .xlsx or .csv file." });
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault(); setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) parseFile(file);
+  };
+
+  const confirmImport = async () => {
+    if (!preview?.length) return;
+    setLoading(true);
+    const entries = preview.map(r => ({ ...r, user_id: userId }));
+    const { error } = await supabase.from("sales").insert(entries);
+    setLoading(false);
+    if (error) return setMsg({ type: "error", text: error.message });
+    entries.forEach(e => onAdd(e));
+    setMsg({ type: "success", text: `✓ ${entries.length} sales records imported successfully!` });
+    setPreview(null);
+    setTab("quick");
+    setTimeout(() => setMsg(null), 4000);
+  };
+
+  const downloadTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["date", "amount", "note"],
+      ["2026-05-01", 2500, "Morning sales"],
+      ["2026-05-02", 3100, ""],
+      ["2026-05-03", 1800, "Rainy day"],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sales");
+    XLSX.writeFile(wb, "sales_template.xlsx");
   };
 
   const history = sales.map(s => ({ date: s.date, actual: s.amount }));
@@ -427,34 +635,22 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
 
   return (
     <div>
-      <div className="page-header">
-        <div className="page-title">Record Sales</div>
-        <div className="page-sub">Log your daily sales — quick total or itemized per product</div>
-      </div>
-
+      <div className="page-header"><div className="page-title">Record Sales</div><div className="page-sub">Log sales manually, itemized, or import from Excel</div></div>
       <div className="grid-2" style={{ marginBottom: 28 }}>
         <div className="card">
           <div className="tab-row">
-            <button className={`tab-btn ${tab === "quick" ? "active" : ""}`} onClick={() => setTab("quick")}>⚡ Quick Sale</button>
-            <button className={`tab-btn ${tab === "itemized" ? "active" : ""}`} onClick={() => setTab("itemized")}>🧾 Itemized Sale</button>
+            <button className={`tab-btn ${tab === "quick" ? "active" : ""}`} onClick={() => setTab("quick")}>⚡ Quick</button>
+            <button className={`tab-btn ${tab === "itemized" ? "active" : ""}`} onClick={() => setTab("itemized")}>🧾 Itemized</button>
+            <button className={`tab-btn ${tab === "import" ? "active" : ""}`} onClick={() => setTab("import")}>📂 Import Excel</button>
           </div>
 
           {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
           {tab === "quick" && (
             <>
-              <div className="input-group">
-                <label className="input-label">Date</label>
-                <input className="input-field" type="date" value={qForm.date} onChange={(e) => setQForm({ ...qForm, date: e.target.value })} />
-              </div>
-              <div className="input-group">
-                <label className="input-label">Total sales amount (₱)</label>
-                <input className="input-field" type="number" placeholder="e.g. 2500" value={qForm.amount} onChange={(e) => setQForm({ ...qForm, amount: e.target.value })} onKeyDown={(e) => e.key === "Enter" && submitQuick()} />
-              </div>
-              <div className="input-group">
-                <label className="input-label">Note (optional)</label>
-                <input className="input-field" placeholder="e.g. holiday, rainy day..." value={qForm.note} onChange={(e) => setQForm({ ...qForm, note: e.target.value })} />
-              </div>
+              <div className="input-group"><label className="input-label">Date</label><input className="input-field" type="date" value={qForm.date} onChange={(e) => setQForm({ ...qForm, date: e.target.value })} /></div>
+              <div className="input-group"><label className="input-label">Total sales amount (₱)</label><input className="input-field" type="number" placeholder="e.g. 2500" value={qForm.amount} onChange={(e) => setQForm({ ...qForm, amount: e.target.value })} onKeyDown={(e) => e.key === "Enter" && submitQuick()} /></div>
+              <div className="input-group"><label className="input-label">Note (optional)</label><input className="input-field" placeholder="e.g. holiday, rainy day..." value={qForm.note} onChange={(e) => setQForm({ ...qForm, note: e.target.value })} /></div>
               <button className="btn btn-primary" onClick={submitQuick} disabled={loading}>{loading ? "Saving..." : "Save Sales Record →"}</button>
             </>
           )}
@@ -462,54 +658,72 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
           {tab === "itemized" && (
             <>
               <div className="grid-2" style={{ marginBottom: 12 }}>
-                <div className="input-group" style={{ marginBottom: 0 }}>
-                  <label className="input-label">Date</label>
-                  <input className="input-field" type="date" value={iDate} onChange={(e) => setIDate(e.target.value)} />
-                </div>
-                <div className="input-group" style={{ marginBottom: 0 }}>
-                  <label className="input-label">Note (optional)</label>
-                  <input className="input-field" placeholder="e.g. morning sales..." value={iNote} onChange={(e) => setINote(e.target.value)} />
-                </div>
+                <div className="input-group" style={{ marginBottom: 0 }}><label className="input-label">Date</label><input className="input-field" type="date" value={iDate} onChange={(e) => setIDate(e.target.value)} /></div>
+                <div className="input-group" style={{ marginBottom: 0 }}><label className="input-label">Note (optional)</label><input className="input-field" placeholder="e.g. morning sales..." value={iNote} onChange={(e) => setINote(e.target.value)} /></div>
               </div>
-
               <div style={{ marginTop: 16 }}>
                 <div className="item-row-header">
-                  <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.8px" }}>Product</span>
-                  <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.8px" }}>Qty</span>
-                  <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.8px" }}>Price</span>
-                  <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.8px" }}>Subtotal</span>
-                  <span></span>
+                  {["Product","Qty","Price","Subtotal",""].map((h, i) => <span key={i} style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.8px" }}>{h}</span>)}
                 </div>
                 {items.map((item, idx) => (
                   <div key={idx} className="item-row">
-                    <ProductSearch
-                      products={products}
-                      value={item.search}
-                      onChange={(v) => updateItem(idx, { search: v, product: null })}
-                      onSelect={(p) => selectProduct(idx, p)}
-                    />
-                    <input className="input-field" type="number" min="1" value={item.qty}
-                      onChange={(e) => updateItem(idx, { qty: Math.max(1, parseInt(e.target.value) || 1) })}
-                      style={{ padding: "11px 8px", textAlign: "center" }} />
-                    <input className="input-field" type="number" value={item.price}
-                      onChange={(e) => updateItem(idx, { price: parseFloat(e.target.value) || 0 })}
-                      style={{ padding: "11px 8px" }} />
-                    <div style={{ fontFamily: "var(--font-h)", fontWeight: 700, color: "var(--accent)", fontSize: 14, textAlign: "right" }}>
-                      ₱{(item.qty * item.price).toLocaleString()}
-                    </div>
+                    <ProductSearch products={products} value={item.search} onChange={(v) => updateItem(idx, { search: v, product: null })} onSelect={(p) => selectProduct(idx, p)} />
+                    <input className="input-field" type="number" min="1" value={item.qty} onChange={(e) => updateItem(idx, { qty: Math.max(1, parseInt(e.target.value) || 1) })} style={{ padding: "11px 8px", textAlign: "center" }} />
+                    <input className="input-field" type="number" value={item.price} onChange={(e) => updateItem(idx, { price: parseFloat(e.target.value) || 0 })} style={{ padding: "11px 8px" }} />
+                    <div style={{ fontFamily: "var(--font-h)", fontWeight: 700, color: "var(--accent)", fontSize: 14, textAlign: "right" }}>₱{(item.qty * item.price).toLocaleString()}</div>
                     <button className="btn btn-danger" style={{ padding: "8px 10px", fontSize: 14 }} onClick={() => removeItem(idx)}>✕</button>
                   </div>
                 ))}
                 <button className="btn btn-secondary" style={{ width: "100%", justifyContent: "center", marginTop: 8, padding: "9px" }} onClick={addItem}>+ Add another product</button>
               </div>
+              <div className="total-box"><span className="total-label">Total Sale Amount</span><span className="total-value">₱{iTotal.toLocaleString()}</span></div>
+              <button className="btn btn-primary" onClick={submitItemized} disabled={loading || iTotal === 0}>{loading ? "Saving..." : `Save Itemized Sale — ₱${iTotal.toLocaleString()} →`}</button>
+            </>
+          )}
 
-              <div className="total-box">
-                <span className="total-label">Total Sale Amount</span>
-                <span className="total-value">₱{iTotal.toLocaleString()}</span>
+          {tab === "import" && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div style={{ fontSize: 13, color: "var(--muted)" }}>Upload your Excel or CSV file with sales data</div>
+                <button className="btn btn-secondary" style={{ padding: "8px 14px", fontSize: 12 }} onClick={downloadTemplate}>⬇ Download Template</button>
               </div>
-              <button className="btn btn-primary" onClick={submitItemized} disabled={loading || iTotal === 0}>
-                {loading ? "Saving..." : `Save Itemized Sale — ₱${iTotal.toLocaleString()} →`}
-              </button>
+              {!preview ? (
+                <div className={`drop-zone ${dragOver ? "drag-over" : ""}`}
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={handleDrop}
+                  onClick={() => fileRef.current?.click()}>
+                  <div style={{ fontSize: 36, marginBottom: 12 }}>📂</div>
+                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Drop your Excel file here</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>or click to browse — supports .xlsx and .csv</div>
+                  <div className="alert alert-info" style={{ textAlign: "left", fontSize: 12 }}>
+                    File must have columns: <strong>date</strong> (YYYY-MM-DD), <strong>amount</strong> (number), <strong>note</strong> (optional)
+                  </div>
+                  <input ref={fileRef} type="file" accept=".xlsx,.csv,.xls" style={{ display: "none" }} onChange={(e) => e.target.files[0] && parseFile(e.target.files[0])} />
+                </div>
+              ) : (
+                <>
+                  <div className="alert alert-success">{preview.length} rows found and ready to import</div>
+                  <div className="table-wrap" style={{ marginBottom: 16, maxHeight: 240, overflowY: "auto" }}>
+                    <table>
+                      <thead><tr><th>Date</th><th>Amount</th><th>Note</th></tr></thead>
+                      <tbody>
+                        {preview.slice(0, 50).map((r, i) => (
+                          <tr key={i}>
+                            <td style={{ color: "var(--muted)" }}>{r.date}</td>
+                            <td style={{ fontFamily: "var(--font-h)", fontWeight: 700, color: "var(--accent)" }}>₱{r.amount.toLocaleString()}</td>
+                            <td style={{ color: "var(--muted)", fontSize: 12 }}>{r.note || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button className="btn btn-primary" onClick={confirmImport} disabled={loading}>{loading ? "Importing..." : `Import ${preview.length} records →`}</button>
+                    <button className="btn btn-secondary" onClick={() => setPreview(null)}>Cancel</button>
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
@@ -519,13 +733,11 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
           {sales.length < 3 ? (
             <div className="empty-state" style={{ padding: "24px 0" }}>
               <div style={{ fontSize: 32, marginBottom: 10 }}>📈</div>
-              <div style={{ color: "var(--muted)", fontSize: 13 }}>Add at least 3 sales records to see your forecast here.</div>
+              <div style={{ color: "var(--muted)", fontSize: 13 }}>Add at least 3 sales records to see your forecast.</div>
             </div>
           ) : (
             <>
-              <div className={`forecast-pill ${trending ? "fp-up" : "fp-down"}`}>
-                {trending ? "📈 Next 30 days: GROWTH expected" : "📉 Next 30 days: DECLINE expected"}
-              </div>
+              <div className={`forecast-pill ${trending ? "fp-up" : "fp-down"}`}>{trending ? "📈 Next 30 days: GROWTH expected" : "📉 Next 30 days: DECLINE expected"}</div>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
@@ -575,47 +787,26 @@ function ForecastPage({ sales }) {
   if (sales.length < 3) return (
     <div>
       <div className="page-header"><div className="page-title">Sales Forecast</div></div>
-      <div className="card"><div className="empty-state">
-        <div className="empty-icon">📈</div>
-        <div className="empty-title">Not enough data yet</div>
-        <div className="empty-sub">Add at least 3 days of sales records to generate a forecast.</div>
-      </div></div>
+      <div className="card"><div className="empty-state"><div className="empty-icon">📈</div><div className="empty-title">Not enough data yet</div><div className="empty-sub">Add at least 3 days of sales records to generate a forecast.</div></div></div>
     </div>
   );
 
   return (
     <div>
-      <div className="page-header">
-        <div className="page-title">Sales Forecast</div>
-        <div className="page-sub">Predicted trend based on your sales history</div>
-      </div>
+      <div className="page-header"><div className="page-title">Sales Forecast</div><div className="page-sub">Predicted trend based on your sales history</div></div>
       <div className="stats-grid" style={{ gridTemplateColumns: "repeat(3,1fr)", marginBottom: 28 }}>
-        <div className="stat-card">
-          <div className="stat-label">Trend direction</div>
-          <div className="stat-value" style={{ color: trending ? "var(--accent2)" : "var(--danger)", fontSize: 22 }}>{trending ? "Going UP ↑" : "Going DOWN ↓"}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Slope (per day)</div>
-          <div className="stat-value" style={{ fontSize: 24 }}>₱{Math.abs(slope).toFixed(0)}</div>
-          <div className={`stat-badge ${trending ? "badge-up" : "badge-down"}`}>{trending ? "gaining" : "losing"} per day avg</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Predicted in {period} days</div>
-          <div className="stat-value" style={{ color: "var(--accent)", fontSize: 24 }}>₱{predicted.toLocaleString()}</div>
-        </div>
+        <div className="stat-card"><div className="stat-label">Trend direction</div><div className="stat-value" style={{ color: trending ? "var(--accent2)" : "var(--danger)", fontSize: 22 }}>{trending ? "Going UP ↑" : "Going DOWN ↓"}</div></div>
+        <div className="stat-card"><div className="stat-label">Slope (per day)</div><div className="stat-value" style={{ fontSize: 24 }}>₱{Math.abs(slope).toFixed(0)}</div><div className={`stat-badge ${trending ? "badge-up" : "badge-down"}`}>{trending ? "gaining" : "losing"} per day avg</div></div>
+        <div className="stat-card"><div className="stat-label">Predicted in {period} days</div><div className="stat-value" style={{ color: "var(--accent)", fontSize: 24 }}>₱{predicted.toLocaleString()}</div></div>
       </div>
       <div className="card">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <div className="card-title" style={{ marginBottom: 0 }}>Forecast chart</div>
           <div style={{ display: "flex", gap: 8 }}>
-            {[7, 14, 30].map((d) => (
-              <button key={d} className={`btn ${period === d ? "btn-primary" : "btn-secondary"}`} style={{ padding: "7px 16px", fontSize: 12 }} onClick={() => setPeriod(d)}>{d} days</button>
-            ))}
+            {[7, 14, 30].map((d) => <button key={d} className={`btn ${period === d ? "btn-primary" : "btn-secondary"}`} style={{ padding: "7px 16px", fontSize: 12 }} onClick={() => setPeriod(d)}>{d} days</button>)}
           </div>
         </div>
-        <div className={`forecast-pill ${trending ? "fp-up" : "fp-down"}`}>
-          {trending ? `📈 Expected to GROW by ₱${(slope * period).toFixed(0)} over next ${period} days` : `📉 Expected to DROP by ₱${Math.abs(slope * period).toFixed(0)} over next ${period} days`}
-        </div>
+        <div className={`forecast-pill ${trending ? "fp-up" : "fp-down"}`}>{trending ? `📈 Expected to GROW by ₱${(slope * period).toFixed(0)} over next ${period} days` : `📉 Expected to DROP by ₱${Math.abs(slope * period).toFixed(0)} over next ${period} days`}</div>
         <ResponsiveContainer width="100%" height={320}>
           <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
@@ -643,22 +834,11 @@ function Inventory({ products, onUpdate, userId }) {
   const [feedback, setFeedback] = useState(null);
   const [editId, setEditId] = useState(null);
   const [editQty, setEditQty] = useState("");
-  const [addMode, setAddMode] = useState("none"); // none | single | bulk
+  const [addMode, setAddMode] = useState("none");
   const [saving, setSaving] = useState(false);
-
-  // Single product form
   const [newProd, setNewProd] = useState({ barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 });
-
-  // Bulk product rows
-  const [bulkRows, setBulkRows] = useState([
-    { barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 },
-    { barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 },
-    { barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 },
-  ]);
-
-  const addBulkRow = () => setBulkRows([...bulkRows, { barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 }]);
-  const removeBulkRow = (idx) => setBulkRows(bulkRows.filter((_, i) => i !== idx));
-  const updateBulkRow = (idx, field, val) => setBulkRows(bulkRows.map((r, i) => i === idx ? { ...r, [field]: val } : r));
+  const [bulkRows, setBulkRows] = useState(Array(3).fill(null).map(() => ({ barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 })));
+  const UNITS = ["pc","pack","bottle","sachet","stick","box","can","kg","g"];
 
   const handleScan = useCallback(async (code) => {
     if (!code.trim()) return;
@@ -690,7 +870,7 @@ function Inventory({ products, onUpdate, userId }) {
   };
 
   const deleteProduct = async (prod) => {
-    if (!window.confirm(`Delete "${prod.name}" from inventory?`)) return;
+    if (!window.confirm(`Delete "${prod.name}"?`)) return;
     await supabase.from("products").delete().eq("id", prod.id);
     onUpdate(products.filter(p => p.id !== prod.id));
   };
@@ -716,11 +896,7 @@ function Inventory({ products, onUpdate, userId }) {
     setSaving(false);
     if (error) return;
     onUpdate([...products, ...data]);
-    setBulkRows([
-      { barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 },
-      { barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 },
-      { barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 },
-    ]);
+    setBulkRows(Array(3).fill(null).map(() => ({ barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 })));
     setAddMode("none");
   };
 
@@ -730,53 +906,37 @@ function Inventory({ products, onUpdate, userId }) {
     return { cls: "stock-ok", label: `${p.stock} ${p.unit}` };
   };
 
-  const UNITS = ["pc","pack","bottle","sachet","stick","box","can","kg","g"];
-
   return (
     <div>
-      <div className="page-header">
-        <div className="page-title">Inventory</div>
-        <div className="page-sub">Scan barcodes or manage stock manually</div>
-      </div>
-
-      {/* Scanner */}
+      <div className="page-header"><div className="page-title">Inventory</div><div className="page-sub">Scan barcodes or manage stock manually</div></div>
       <div className="card" style={{ marginBottom: 24 }}>
         <div className="card-title">USB Barcode Scanner</div>
-        <div className={`scanner-area ${scanFocus ? "active" : ""}`} onClick={() => document.getElementById("scanInput")?.focus()}>
-          <div className="scanner-icon">📷</div>
-          <div style={{ fontSize: 14, color: "var(--muted)", marginBottom: 12 }}>
-            {scanFocus ? "Ready — scan a barcode now" : "Click here to activate scanner"}
-          </div>
-          <input id="scanInput" className="input-field" style={{ maxWidth: 320, margin: "0 auto", textAlign: "center", letterSpacing: 2 }}
-            placeholder="Barcode number..." value={scanCode}
+        <div className={`scanner-area ${scanFocus ? "active" : ""}`} onClick={() => document.getElementById("invScan")?.focus()}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>📷</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>{scanFocus ? "Ready — scan now" : "Click to activate scanner"}</div>
+          <input id="invScan" className="input-field" style={{ maxWidth: 280, margin: "0 auto", textAlign: "center", letterSpacing: 2 }}
+            placeholder="Barcode..." value={scanCode}
             onChange={(e) => setScanCode(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleScan(scanCode)}
             onFocus={() => setScanFocus(true)} onBlur={() => setScanFocus(false)} />
-          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 10 }}>USB scanner types the barcode → auto adds +1 stock</div>
         </div>
         {feedback && <div className={`scanner-feedback ${feedback.type === "success" ? "feedback-success" : "feedback-error"}`}>{feedback.text}</div>}
       </div>
 
-      {/* Add buttons */}
       <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
         <button className={`btn ${addMode === "single" ? "btn-primary" : "btn-secondary"}`} onClick={() => setAddMode(addMode === "single" ? "none" : "single")}>+ Add Single Product</button>
         <button className={`btn ${addMode === "bulk" ? "btn-primary" : "btn-secondary"}`} onClick={() => setAddMode(addMode === "bulk" ? "none" : "bulk")}>+ Bulk Add Products</button>
       </div>
 
-      {/* Single add form */}
       {addMode === "single" && (
         <div className="card" style={{ marginBottom: 20 }}>
           <div className="card-title">Add single product</div>
           <div className="grid-3">
-            <div className="input-group"><label className="input-label">Barcode / SKU</label><input className="input-field" placeholder="Scan or type barcode" value={newProd.barcode} onChange={(e) => setNewProd({ ...newProd, barcode: e.target.value })} /></div>
+            <div className="input-group"><label className="input-label">Barcode / SKU</label><input className="input-field" placeholder="Scan or type" value={newProd.barcode} onChange={(e) => setNewProd({ ...newProd, barcode: e.target.value })} /></div>
             <div className="input-group"><label className="input-label">Product name *</label><input className="input-field" placeholder="e.g. Pepsi 330ml" value={newProd.name} onChange={(e) => setNewProd({ ...newProd, name: e.target.value })} /></div>
             <div className="input-group"><label className="input-label">Price (₱)</label><input className="input-field" type="number" placeholder="25" value={newProd.price} onChange={(e) => setNewProd({ ...newProd, price: e.target.value })} /></div>
             <div className="input-group"><label className="input-label">Starting stock</label><input className="input-field" type="number" placeholder="0" value={newProd.stock} onChange={(e) => setNewProd({ ...newProd, stock: e.target.value })} /></div>
-            <div className="input-group"><label className="input-label">Unit</label>
-              <select className="input-field" value={newProd.unit} onChange={(e) => setNewProd({ ...newProd, unit: e.target.value })}>
-                {UNITS.map((u) => <option key={u}>{u}</option>)}
-              </select>
-            </div>
+            <div className="input-group"><label className="input-label">Unit</label><select className="input-field" value={newProd.unit} onChange={(e) => setNewProd({ ...newProd, unit: e.target.value })}>{UNITS.map(u => <option key={u}>{u}</option>)}</select></div>
             <div className="input-group"><label className="input-label">Low stock alert at</label><input className="input-field" type="number" placeholder="10" value={newProd.low_threshold} onChange={(e) => setNewProd({ ...newProd, low_threshold: e.target.value })} /></div>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
@@ -786,51 +946,41 @@ function Inventory({ products, onUpdate, userId }) {
         </div>
       )}
 
-      {/* Bulk add form */}
       {addMode === "bulk" && (
         <div className="card" style={{ marginBottom: 20 }}>
-          <div className="card-title">Bulk add products — fill in as many rows as you need</div>
-          <div className="bulk-header">
-            {["Barcode","Name *","Price (₱)","Stock","Unit","Low Alert",""].map((h, i) => (
-              <span key={i} style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.8px" }}>{h}</span>
+          <div className="card-title">Bulk add products</div>
+          <div style={{ overflowX: "auto" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr 0.8fr 0.8fr 0.8fr 0.8fr 36px", gap: 8, marginBottom: 6, minWidth: 700 }}>
+              {["Barcode","Name *","Price (₱)","Stock","Unit","Low Alert",""].map((h, i) => <span key={i} style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.8px" }}>{h}</span>)}
+            </div>
+            {bulkRows.map((row, idx) => (
+              <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr 0.8fr 0.8fr 0.8fr 0.8fr 36px", gap: 8, marginBottom: 8, alignItems: "center", minWidth: 700 }}>
+                <input className="input-field" placeholder="Barcode" value={row.barcode} onChange={(e) => setBulkRows(bulkRows.map((r, i) => i === idx ? { ...r, barcode: e.target.value } : r))} style={{ padding: "9px 10px" }} />
+                <input className="input-field" placeholder="Product name" value={row.name} onChange={(e) => setBulkRows(bulkRows.map((r, i) => i === idx ? { ...r, name: e.target.value } : r))} style={{ padding: "9px 10px" }} />
+                <input className="input-field" type="number" placeholder="0" value={row.price} onChange={(e) => setBulkRows(bulkRows.map((r, i) => i === idx ? { ...r, price: e.target.value } : r))} style={{ padding: "9px 10px" }} />
+                <input className="input-field" type="number" placeholder="0" value={row.stock} onChange={(e) => setBulkRows(bulkRows.map((r, i) => i === idx ? { ...r, stock: e.target.value } : r))} style={{ padding: "9px 10px" }} />
+                <select className="input-field" value={row.unit} onChange={(e) => setBulkRows(bulkRows.map((r, i) => i === idx ? { ...r, unit: e.target.value } : r))} style={{ padding: "9px 10px" }}>{UNITS.map(u => <option key={u}>{u}</option>)}</select>
+                <input className="input-field" type="number" placeholder="10" value={row.low_threshold} onChange={(e) => setBulkRows(bulkRows.map((r, i) => i === idx ? { ...r, low_threshold: e.target.value } : r))} style={{ padding: "9px 10px" }} />
+                <button className="btn btn-danger" style={{ padding: "8px 10px" }} onClick={() => setBulkRows(bulkRows.filter((_, i) => i !== idx))}>✕</button>
+              </div>
             ))}
           </div>
-          {bulkRows.map((row, idx) => (
-            <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr 0.8fr 0.8fr 0.8fr 0.8fr 36px", gap: 8, marginBottom: 8, alignItems: "center" }}>
-              <input className="input-field" placeholder="Barcode" value={row.barcode} onChange={(e) => updateBulkRow(idx, "barcode", e.target.value)} style={{ padding: "9px 10px" }} />
-              <input className="input-field" placeholder="Product name" value={row.name} onChange={(e) => updateBulkRow(idx, "name", e.target.value)} style={{ padding: "9px 10px" }} />
-              <input className="input-field" type="number" placeholder="0" value={row.price} onChange={(e) => updateBulkRow(idx, "price", e.target.value)} style={{ padding: "9px 10px" }} />
-              <input className="input-field" type="number" placeholder="0" value={row.stock} onChange={(e) => updateBulkRow(idx, "stock", e.target.value)} style={{ padding: "9px 10px" }} />
-              <select className="input-field" value={row.unit} onChange={(e) => updateBulkRow(idx, "unit", e.target.value)} style={{ padding: "9px 10px" }}>
-                {UNITS.map(u => <option key={u}>{u}</option>)}
-              </select>
-              <input className="input-field" type="number" placeholder="10" value={row.low_threshold} onChange={(e) => updateBulkRow(idx, "low_threshold", e.target.value)} style={{ padding: "9px 10px" }} />
-              <button className="btn btn-danger" style={{ padding: "8px 10px" }} onClick={() => removeBulkRow(idx)}>✕</button>
-            </div>
-          ))}
           <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-            <button className="btn btn-secondary" onClick={addBulkRow}>+ Add row</button>
-            <button className="btn btn-primary" onClick={addBulkProducts} disabled={saving}>{saving ? "Saving..." : `Save All Products →`}</button>
+            <button className="btn btn-secondary" onClick={() => setBulkRows([...bulkRows, { barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 }])}>+ Add row</button>
+            <button className="btn btn-primary" onClick={addBulkProducts} disabled={saving}>{saving ? "Saving..." : "Save All →"}</button>
             <button className="btn btn-secondary" onClick={() => setAddMode("none")}>Cancel</button>
           </div>
         </div>
       )}
 
-      {/* Products table */}
       <div className="card">
         <div className="card-title">All products ({products.length})</div>
         {products.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">📦</div>
-            <div className="empty-title">No products yet</div>
-            <div className="empty-sub">Add your first product using the buttons above.</div>
-          </div>
+          <div className="empty-state"><div className="empty-icon">📦</div><div className="empty-title">No products yet</div><div className="empty-sub">Add your first product using the buttons above.</div></div>
         ) : (
           <div className="table-wrap">
             <table>
-              <thead>
-                <tr><th>Product</th><th>Barcode</th><th>Price</th><th>Stock</th><th>Actions</th></tr>
-              </thead>
+              <thead><tr><th>Product</th><th>Barcode</th><th>Price</th><th>Stock</th><th>Actions</th></tr></thead>
               <tbody>
                 {products.map((p) => {
                   const s = stockStatus(p);
@@ -846,7 +996,7 @@ function Inventory({ products, onUpdate, userId }) {
                             <button className="btn btn-primary" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => saveEdit(p)}>✓</button>
                             <button className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setEditId(null)}>✕</button>
                           </div>
-                        ) : (<span className={`stock-pill ${s.cls}`}>{s.label}</span>)}
+                        ) : <span className={`stock-pill ${s.cls}`}>{s.label}</span>}
                       </td>
                       <td>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -863,6 +1013,99 @@ function Inventory({ products, onUpdate, userId }) {
             </table>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── HELP PAGE ─────────────────────────────────────────────────────────────────
+function HelpPage() {
+  const sections = [
+    {
+      icon: "🚀", title: "Getting Started",
+      steps: [
+        { title: "Create your account", desc: "Click 'Register free' on the login page. Enter your store name, email, and password." },
+        { title: "Add your products", desc: "Go to Inventory → click 'Add Single Product' or 'Bulk Add Products' to add all your items with their prices and stock counts." },
+        { title: "Start recording sales", desc: "Go to Record Sales or use the POS page to start logging your daily sales." },
+      ]
+    },
+    {
+      icon: "🛒", title: "POS — Point of Sale (Live Selling)",
+      steps: [
+        { title: "Open the POS page", desc: "Click 'POS' in the sidebar. This is your cashier screen for live transactions." },
+        { title: "Scan or search products", desc: "Plug in your USB barcode scanner and scan items — they'll be added to the cart automatically. Or search and click a product to add it." },
+        { title: "Adjust quantities", desc: "Use the + and − buttons next to each cart item to change the quantity." },
+        { title: "Checkout", desc: "Click 'Checkout' when done. The sale is saved to your records and stock is automatically deducted." },
+      ]
+    },
+    {
+      icon: "💰", title: "Recording Sales",
+      steps: [
+        { title: "⚡ Quick Sale", desc: "Just enter the date and total amount. Best for end-of-day totals." },
+        { title: "🧾 Itemized Sale", desc: "Search and add products one by one. Quantities and totals are calculated automatically. Stock is deducted when saved." },
+        { title: "📂 Import from Excel", desc: "Download the template, fill it in with your sales data (date, amount, note), then upload it. Great for importing past records." },
+      ]
+    },
+    {
+      icon: "📦", title: "Managing Inventory",
+      steps: [
+        { title: "Add products", desc: "Use 'Add Single Product' for one item or 'Bulk Add' to add many at once in a spreadsheet-like table." },
+        { title: "USB Barcode Scanner", desc: "Click the scanner area to activate it, then scan a barcode — it will add +1 stock to that product automatically." },
+        { title: "Adjust stock manually", desc: "Use the + and − buttons or click Edit to set an exact stock count for any product." },
+        { title: "Low stock alerts", desc: "Set a 'low stock alert' number when adding a product. When stock falls below that number, it shows as orange in your inventory." },
+        { title: "Delete a product", desc: "Click the Delete button next to any product to remove it from your inventory." },
+      ]
+    },
+    {
+      icon: "📈", title: "Understanding the Forecast",
+      steps: [
+        { title: "How it works", desc: "The app uses linear regression — it looks at your past sales and finds the trend line to predict future sales." },
+        { title: "Going UP or DOWN", desc: "If your sales trend line is going upward, the forecast shows 📈 Going UP. If it's going down, it shows 📉 Going DOWN." },
+        { title: "How many days?", desc: "On the Forecast page, you can switch between 7-day, 14-day, and 30-day predictions." },
+        { title: "Minimum data needed", desc: "You need at least 3 days of sales records before a forecast can be generated." },
+      ]
+    },
+  ];
+
+  return (
+    <div>
+      <div className="page-header"><div className="page-title">Help & Instructions</div><div className="page-sub">Step-by-step guide to using SalesForecast</div></div>
+      {sections.map((sec, si) => (
+        <div key={si} className="card" style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+            <div style={{ fontSize: 28 }}>{sec.icon}</div>
+            <div style={{ fontFamily: "var(--font-h)", fontSize: 17, fontWeight: 800 }}>{sec.title}</div>
+          </div>
+          {sec.steps.map((step, i) => (
+            <div key={i} className="help-step">
+              <div className="help-num">{i + 1}</div>
+              <div className="help-text">
+                <strong>{step.title}</strong>
+                <span>{step.desc}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+          <div style={{ fontSize: 28 }}>💡</div>
+          <div style={{ fontFamily: "var(--font-h)", fontSize: 17, fontWeight: 800 }}>Quick Tips</div>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {[
+            "Add products before using POS",
+            "Use POS for live customer transactions",
+            "Use Quick Sale for end-of-day totals",
+            "Import Excel for past sales data",
+            "Scan barcodes to add +1 stock in Inventory",
+            "Need 3+ days of data for forecasts",
+            "Low stock shows in orange, out of stock in red",
+            "Open the app at least once a week to keep it active",
+          ].map((tip, i) => (
+            <span key={i} className="help-badge badge-neutral" style={{ fontSize: 12, padding: "5px 12px" }}>💡 {tip}</span>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -898,28 +1141,16 @@ export default function App() {
 
   const logout = async () => { await supabase.auth.signOut(); setUser(null); };
 
-  if (loading) return (
-    <>
-      <style>{CSS}</style>
-      <div className="loading-screen">
-        <div className="spinner"></div>
-        <div style={{ color: "var(--muted)", fontSize: 13 }}>Loading SalesForecast...</div>
-      </div>
-    </>
-  );
-
-  if (!user) return (
-    <>
-      <style>{CSS}</style>
-      <LoginPage onLogin={setUser} />
-    </>
-  );
+  if (loading) return (<><style>{CSS}</style><div className="loading-screen"><div className="spinner"></div><div style={{ color: "var(--muted)", fontSize: 13 }}>Loading SalesForecast...</div></div></>);
+  if (!user) return (<><style>{CSS}</style><LoginPage onLogin={setUser} /></>);
 
   const NAV = [
     { id: "dashboard", icon: "📊", label: "Dashboard" },
+    { id: "pos", icon: "🛒", label: "POS" },
     { id: "sales", icon: "💰", label: "Record Sales" },
     { id: "forecast", icon: "📈", label: "Forecast" },
     { id: "inventory", icon: "📦", label: "Inventory" },
+    { id: "help", icon: "❓", label: "Help" },
   ];
 
   return (
@@ -942,9 +1173,11 @@ export default function App() {
         </nav>
         <main className="main">
           {page === "dashboard" && <Dashboard sales={sales} products={products} />}
+          {page === "pos" && <POSPage products={products} onUpdateProducts={setProducts} onAddSale={(s) => setSales([...sales, s])} userId={user.id} />}
           {page === "sales" && <SalesEntry sales={sales} onAdd={(s) => setSales([...sales, s])} userId={user.id} products={products} onUpdateProducts={setProducts} />}
           {page === "forecast" && <ForecastPage sales={sales} />}
           {page === "inventory" && <Inventory products={products} onUpdate={setProducts} userId={user.id} />}
+          {page === "help" && <HelpPage />}
         </main>
       </div>
     </>
