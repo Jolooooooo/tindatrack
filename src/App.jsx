@@ -289,7 +289,7 @@ function LoginPage({ onLogin }) {
   const [showPass, setShowPass] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
 
-  const handle = async (role = "owner") => {
+  const handle = async () => {
     setErr(""); setLoading(true);
     try {
       if (mode === "forgot") {
@@ -307,14 +307,21 @@ function LoginPage({ onLogin }) {
         const { data, error } = await supabase.auth.signUp({ email: form.email, password: form.password });
         if (error) { setErr(error.message); return; }
         if (data.user) {
-          await supabase.from("profiles").upsert({ id: data.user.id, store_name: form.storeName });
-          onLogin({ ...data.user, storeName: form.storeName, role: "owner" });
+          await supabase.from("profiles").upsert({ id: data.user.id, store_name: form.storeName, role: "owner" });
+          onLogin({ ...data.user, storeName: form.storeName, role: "owner", ownerId: data.user.id });
         } else { setErr("Check your email to confirm your account, then sign in."); }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
         if (error) { setErr(error.message); return; }
-        const { data: profile } = await supabase.from("profiles").select("store_name, record_pin").eq("id", data.user.id).single();
-        onLogin({ ...data.user, storeName: profile?.store_name || data.user.email, record_pin: profile?.record_pin, role });
+        const { data: profile } = await supabase.from("profiles").select("store_name, record_pin, role, owner_id").eq("id", data.user.id).single();
+        const userRole = profile?.role || "owner";
+        const ownerId = userRole === "employee" ? profile?.owner_id : data.user.id;
+        let pin = profile?.record_pin;
+        if (userRole === "employee" && profile?.owner_id) {
+          const { data: ownerProfile } = await supabase.from("profiles").select("record_pin").eq("id", profile.owner_id).single();
+          pin = ownerProfile?.record_pin;
+        }
+        onLogin({ ...data.user, storeName: profile?.store_name || data.user.email, record_pin: pin, role: userRole, ownerId });
       }
     } finally { setLoading(false); }
   };
@@ -371,22 +378,9 @@ function LoginPage({ onLogin }) {
                 <a onClick={() => { setMode("forgot"); setErr(""); }} style={{ fontSize: 12, color: "var(--accent)", cursor: "pointer" }}>Forgot password?</a>
               </div>
             )}
-            {mode === "login" ? (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 4 }}>
-                <button className="btn btn-primary" style={{ justifyContent: "center", flexDirection: "column", padding: "14px", gap: 4 }} onClick={() => handle("owner")} disabled={loading}>
-                  <span style={{ fontSize: 20 }}>👑</span>
-                  <span style={{ fontSize: 13 }}>{loading ? "..." : "Owner"}</span>
-                </button>
-                <button className="btn btn-secondary" style={{ justifyContent: "center", flexDirection: "column", padding: "14px", gap: 4 }} onClick={() => handle("employee")} disabled={loading}>
-                  <span style={{ fontSize: 20 }}>👤</span>
-                  <span style={{ fontSize: 13 }}>{loading ? "..." : "Employee"}</span>
-                </button>
-              </div>
-            ) : (
-              <button className="btn btn-primary" style={{ width: "100%", marginTop: 4, justifyContent: "center" }} onClick={() => handle("owner")} disabled={loading}>
-                {loading ? "Please wait..." : "Create account →"}
-              </button>
-            )}
+            <button className="btn btn-primary" style={{ width: "100%", marginTop: 4, justifyContent: "center" }} onClick={() => handle()} disabled={loading}>
+              {loading ? "Please wait..." : mode === "login" ? "Sign in →" : "Create account →"}
+            </button>
             <div className="login-footer">
               {mode === "login" ? <>No account? <a onClick={() => setMode("register")}>Register free</a></> : <>Already have one? <a onClick={() => setMode("login")}>Sign in</a></>}
             </div>
@@ -1437,6 +1431,110 @@ function ResetPasswordPage({ onDone }) {
   );
 }
 
+
+// ── MANAGE EMPLOYEES PAGE ────────────────────────────────────────────────────
+function ManageEmployees({ user }) {
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ email: "", password: "", name: "" });
+  const [showPass, setShowPass] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    supabase.from("profiles").select("*").eq("owner_id", user.id).then(({ data }) => {
+      setEmployees(data || []);
+      setLoading(false);
+    });
+  }, [user]);
+
+  const createEmployee = async () => {
+    if (!form.email || !form.password) return setMsg({ type: "error", text: "Fill in email and password." });
+    if (form.password.length < 6) return setMsg({ type: "error", text: "Password must be at least 6 characters." });
+    setSaving(true);
+    // Sign up employee
+    const { data, error } = await supabase.auth.signUp({ email: form.email, password: form.password });
+    if (error) { setSaving(false); return setMsg({ type: "error", text: error.message }); }
+    if (data.user) {
+      // Create profile linked to owner
+      await supabase.from("profiles").upsert({
+        id: data.user.id,
+        store_name: user.storeName,
+        owner_id: user.id,
+        role: "employee"
+      });
+      setEmployees(prev => [...prev, { id: data.user.id, store_name: user.storeName, role: "employee", email: form.email }]);
+      setMsg({ type: "success", text: `✓ Employee account created for ${form.email}` });
+      setForm({ email: "", password: "", name: "" });
+    }
+    setSaving(false);
+    setTimeout(() => setMsg(null), 4000);
+  };
+
+  const deleteEmployee = async (emp) => {
+    if (!window.confirm(`Remove employee ${emp.email || emp.id}?`)) return;
+    await supabase.from("profiles").delete().eq("id", emp.id);
+    setEmployees(prev => prev.filter(e => e.id !== emp.id));
+  };
+
+  return (
+    <div>
+      <div className="page-header">
+        <div className="page-title">Manage Employees</div>
+        <div className="page-sub">Create and manage employee accounts for your store</div>
+      </div>
+
+      <div className="grid-2" style={{ marginBottom: 24 }}>
+        <div className="card">
+          <div className="card-title">Create Employee Account</div>
+          <div className="alert alert-info" style={{ marginBottom: 16 }}>
+            Employee accounts share the same store data but cannot edit or delete sales records.
+          </div>
+          {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
+          <div className="input-group">
+            <label className="input-label">Employee email</label>
+            <input className="input-field" type="email" placeholder="employee@email.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+          </div>
+          <div className="input-group">
+            <label className="input-label">Password</label>
+            <div style={{ position: "relative" }}>
+              <input className="input-field" type={showPass ? "text" : "password"} placeholder="Min. 6 characters" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} style={{ paddingRight: 44 }} onKeyDown={e => e.key === "Enter" && createEmployee()} />
+              <button type="button" onClick={() => setShowPass(!showPass)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showPass ? "🙈" : "👁️"}</button>
+            </div>
+          </div>
+          <button className="btn btn-primary" onClick={createEmployee} disabled={saving}>{saving ? "Creating..." : "Create Employee Account →"}</button>
+        </div>
+
+        <div className="card">
+          <div className="card-title">Employee Accounts ({employees.length})</div>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: 24 }}><div className="spinner"></div></div>
+          ) : employees.length === 0 ? (
+            <div className="empty-state" style={{ padding: "24px 0" }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>👤</div>
+              <div style={{ color: "var(--muted)", fontSize: 13 }}>No employee accounts yet. Create one on the left.</div>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Email / ID</th><th>Role</th><th>Action</th></tr></thead>
+                <tbody>
+                  {employees.map(emp => (
+                    <tr key={emp.id}>
+                      <td style={{ fontSize: 12, fontFamily: "monospace", color: "var(--muted)" }}>{emp.id.slice(0, 16)}...</td>
+                      <td><span className="stock-pill stock-ok">👤 Employee</span></td>
+                      <td><button className="btn btn-danger" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => deleteEmployee(emp)}>Remove</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 // ── SETTINGS PAGE ────────────────────────────────────────────────────────────
 function SettingsPage({ user, recordPin, onPinChange }) {
   const [currentPin, setCurrentPin] = useState("");
@@ -1577,15 +1675,24 @@ export default function App() {
   const handleLogin = (userData) => {
     setUser(userData);
     if (userData.record_pin) setRecordPin(userData.record_pin);
-    if (userData.role) setUserRole(userData.role);
+    setUserRole(userData.role || "owner");
   };
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
-        const { data: profile } = await supabase.from("profiles").select("store_name, record_pin").eq("id", session.user.id).single();
-        setUser({ ...session.user, storeName: profile?.store_name || session.user.email });
-        if (profile?.record_pin) setRecordPin(profile.record_pin);
+        const { data: profile } = await supabase.from("profiles").select("store_name, record_pin, role, owner_id").eq("id", session.user.id).single();
+        const role = profile?.role || "owner";
+        const ownerId = role === "employee" ? profile?.owner_id : session.user.id;
+        // If employee, get owner's record_pin
+        let pin = profile?.record_pin;
+        if (role === "employee" && profile?.owner_id) {
+          const { data: ownerProfile } = await supabase.from("profiles").select("record_pin").eq("id", profile.owner_id).single();
+          pin = ownerProfile?.record_pin;
+        }
+        setUser({ ...session.user, storeName: profile?.store_name || session.user.email, role, ownerId });
+        if (pin) setRecordPin(pin);
+        setUserRole(role);
       }
       setLoading(false);
     });
@@ -1598,8 +1705,9 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
-    supabase.from("sales").select("*").eq("user_id", user.id).order("date", { ascending: true }).then(({ data }) => setSales(data || []));
-    supabase.from("products").select("*").eq("user_id", user.id).order("name").then(({ data }) => setProducts(data || []));
+    const storeOwnerId = user.ownerId || user.id;
+    supabase.from("sales").select("*").eq("user_id", storeOwnerId).order("date", { ascending: true }).then(({ data }) => setSales(data || []));
+    supabase.from("products").select("*").eq("user_id", storeOwnerId).order("name").then(({ data }) => setProducts(data || []));
   }, [user]);
 
   const logout = async () => { await supabase.auth.signOut(); setUser(null); };
@@ -1618,7 +1726,10 @@ export default function App() {
     { id: "sales", icon: "💰", label: "Record Sales" },
     { id: "forecast", icon: "📈", label: "Forecast" },
     { id: "inventory", icon: "📦", label: "Inventory" },
-    ...(userRole === "owner" ? [{ id: "settings", icon: "⚙️", label: "Settings" }] : []),
+    ...(userRole === "owner" ? [
+      { id: "employees", icon: "👥", label: "Employees" },
+      { id: "settings", icon: "⚙️", label: "Settings" },
+    ] : []),
     { id: "help", icon: "❓", label: "Help" },
   ];
 
@@ -1650,11 +1761,12 @@ export default function App() {
         <main className="main">
 
           {page === "dashboard" && <Dashboard sales={sales} products={products} />}
-          {page === "pos" && <POSPage products={products} onUpdateProducts={setProducts} onAddSale={(s) => setSales([...sales, s])} userId={user.id} />}
-          {page === "sales" && <SalesEntry sales={sales} onAdd={(s) => setSales([...sales, s])} onUpdate={handleUpdateSale} onDelete={handleDeleteSale} userId={user.id} products={products} onUpdateProducts={setProducts} recordPin={recordPin} isOwner={userRole === "owner"} />}
+          {page === "pos" && <POSPage products={products} onUpdateProducts={setProducts} onAddSale={(s) => setSales([...sales, s])} userId={user.ownerId || user.id} />}
+          {page === "sales" && <SalesEntry sales={sales} onAdd={(s) => setSales([...sales, s])} onUpdate={handleUpdateSale} onDelete={handleDeleteSale} userId={user.ownerId || user.id} products={products} onUpdateProducts={setProducts} recordPin={recordPin} isOwner={userRole === "owner"} />}
           {page === "forecast" && <ForecastPage sales={sales} />}
-          {page === "inventory" && <Inventory products={products} onUpdate={setProducts} userId={user.id} />}
+          {page === "inventory" && <Inventory products={products} onUpdate={setProducts} userId={user.ownerId || user.id} />}
           
+          {page === "employees" && userRole === "owner" && <ManageEmployees user={user} />}
           {page === "settings" && userRole === "owner" && <SettingsPage user={user} recordPin={recordPin} onPinChange={setRecordPin} />}
           {page === "help" && <HelpPage />}
         </main>
