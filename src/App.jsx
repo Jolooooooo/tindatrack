@@ -46,6 +46,7 @@ const CSS = `
   .badge-up { background: rgba(62,242,160,0.12); color: var(--accent2); }
   .badge-down { background: rgba(242,90,62,0.12); color: var(--danger); }
   .badge-neutral { background: rgba(107,117,112,0.2); color: var(--muted); }
+  .badge-warn { background: rgba(242,165,62,0.12); color: var(--warn); }
   .input-group { margin-bottom: 16px; }
   .input-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; display: block; letter-spacing: 0.3px; }
   .input-field { width: 100%; padding: 11px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); color: var(--text); font-size: 14px; transition: border-color 0.15s; }
@@ -95,6 +96,9 @@ const CSS = `
   .stock-ok { background: rgba(62,242,160,0.1); color: var(--accent2); }
   .stock-low { background: rgba(242,165,62,0.12); color: #f2a53e; }
   .stock-out { background: rgba(242,90,62,0.12); color: var(--danger); }
+  .exp-ok { background: rgba(62,242,160,0.1); color: var(--accent2); }
+  .exp-soon { background: rgba(242,165,62,0.12); color: var(--warn); }
+  .exp-expired { background: rgba(242,90,62,0.12); color: var(--danger); }
   .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .loading-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; background: var(--bg); }
@@ -115,7 +119,6 @@ const CSS = `
   .search-option { padding: 10px 14px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.1s; }
   .search-option:last-child { border-bottom: none; }
   .search-option:hover { background: rgba(181,242,62,0.06); color: var(--accent); }
-  /* POS */
   .pos-wrap { display: grid; grid-template-columns: 1fr 360px; gap: 20px; min-height: 70vh; }
   .pos-cart { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); display: flex; flex-direction: column; }
   .pos-cart-header { padding: 16px 20px; border-bottom: 1px solid var(--border); font-family: var(--font-h); font-weight: 700; font-size: 15px; }
@@ -130,16 +133,25 @@ const CSS = `
   .qty-btn { width: 26px; height: 26px; border-radius: 6px; background: var(--border); color: var(--text); font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; border: none; transition: background 0.1s; }
   .qty-btn:hover { background: var(--accent); color: #0d0f0e; }
   .qty-num { font-family: var(--font-h); font-weight: 700; font-size: 14px; min-width: 24px; text-align: center; }
-  /* help page */
-  .help-section { margin-bottom: 28px; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .modal { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 28px; width: 100%; max-width: 480px; }
+  .modal-title { font-family: var(--font-h); font-size: 18px; font-weight: 800; margin-bottom: 6px; }
+  .modal-sub { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
   .help-step { display: flex; gap: 16px; margin-bottom: 16px; align-items: flex-start; }
   .help-num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #0d0f0e; font-family: var(--font-h); font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
   .help-text { flex: 1; }
   .help-text strong { font-weight: 600; color: var(--text); display: block; margin-bottom: 4px; }
   .help-text span { font-size: 13px; color: var(--muted); line-height: 1.6; }
-  .help-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 99px; font-size: 11px; font-weight: 600; margin-right: 6px; margin-bottom: 4px; }
   .drop-zone { border: 2px dashed var(--border); border-radius: var(--r); padding: 32px; text-align: center; transition: all 0.2s; cursor: pointer; }
   .drop-zone.drag-over { border-color: var(--accent); background: rgba(181,242,62,0.04); }
+  @media print {
+    .sidebar, .no-print { display: none !important; }
+    .main { margin-left: 0 !important; padding: 0 !important; }
+    body { background: white !important; color: black !important; }
+    .card { border: 1px solid #ccc !important; background: white !important; }
+    table { font-size: 11px !important; }
+    th, td { color: black !important; border-color: #ccc !important; }
+  }
   @media (max-width: 900px) {
     .stats-grid { grid-template-columns: 1fr 1fr; }
     .sidebar { width: 60px; }
@@ -160,19 +172,31 @@ function linearRegression(points) {
   const sumXY = xs.reduce((a, x, i) => a + x * ys[i], 0), sumXX = xs.reduce((a, x) => a + x * x, 0);
   const denom = n * sumXX - sumX * sumX;
   if (denom === 0) return { slope: 0, intercept: sumY / n };
-  return { slope: (n * sumXY - sumX * sumY) / denom, intercept: (sumY - (n * sumXY - sumX * sumY) / denom * sumX) / n };
+  const slope = (n * sumXY - sumX * sumY) / denom;
+  return { slope, intercept: (sumY - slope * sumX) / n };
 }
 
 function buildChartData(history, forecastDays = 7) {
   if (!history.length) return { chartData: [], slope: 0 };
-  const { slope, intercept } = linearRegression(history);
+  const recent = history.slice(-14);
+  const { slope, intercept } = linearRegression(recent);
   const base = history.map((h, i) => ({ ...h, line: Math.round(intercept + slope * i) }));
   const lastDate = new Date();
   for (let i = 1; i <= forecastDays; i++) {
     const d = new Date(); d.setDate(lastDate.getDate() + i);
-    base.push({ date: d.toLocaleDateString("en-PH", { month: "short", day: "numeric" }), actual: null, predicted: Math.max(0, Math.round(intercept + slope * (history.length - 1 + i))) });
+    base.push({ date: d.toLocaleDateString("en-PH", { month: "short", day: "numeric" }), actual: null, predicted: Math.max(0, Math.round(intercept + slope * (recent.length - 1 + i))) });
   }
   return { chartData: base, slope };
+}
+
+function expiryStatus(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const exp = new Date(dateStr);
+  const diff = Math.ceil((exp - today) / (1000 * 60 * 60 * 24));
+  if (diff < 0) return { cls: "exp-expired", label: "Expired", days: diff };
+  if (diff <= 7) return { cls: "exp-soon", label: `Expires in ${diff}d`, days: diff };
+  return { cls: "exp-ok", label: `Exp: ${exp.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}`, days: diff };
 }
 
 function CustomTooltip({ active, payload, label }) {
@@ -208,11 +232,52 @@ function ProductSearch({ products, value, onChange, onSelect }) {
             <div key={p.id} className="search-option" onMouseDown={() => { onSelect(p); setOpen(false); }}>
               <span style={{ fontWeight: 500 }}>{p.name}</span>
               <span style={{ color: "var(--accent)", marginLeft: 8 }}>₱{p.price}</span>
-              <span style={{ color: "var(--muted)", fontSize: 11, marginLeft: 8 }}>{p.stock} {p.unit} left</span>
+              <span style={{ color: "var(--muted)", fontSize: 11, marginLeft: 8 }}>{p.stock} left</span>
             </div>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── PASSWORD CONFIRM MODAL ────────────────────────────────────────────────────
+function PasswordModal({ title, subtitle, onConfirm, onCancel, userEmail }) {
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [show, setShow] = useState(false);
+
+  const confirm = async () => {
+    if (!pw) return setErr("Enter your password.");
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({ email: userEmail, password: pw });
+    setLoading(false);
+    if (error) { setErr("Wrong password. Try again."); return; }
+    onConfirm();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-title">🔐 {title}</div>
+        <div className="modal-sub">{subtitle}</div>
+        <div className="input-group">
+          <label className="input-label">Enter your password to confirm</label>
+          <div style={{ position: "relative" }}>
+            <input className="input-field" type={show ? "text" : "password"} placeholder="••••••••" value={pw}
+              onChange={(e) => { setPw(e.target.value); setErr(""); }}
+              onKeyDown={(e) => e.key === "Enter" && confirm()}
+              autoFocus style={{ paddingRight: 44 }} />
+            <button type="button" onClick={() => setShow(!show)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{show ? "🙈" : "👁️"}</button>
+          </div>
+        </div>
+        {err && <div className="alert alert-error">{err}</div>}
+        <div style={{ display: "flex", gap: 10 }}>
+          <button className="btn btn-primary" onClick={confirm} disabled={loading}>{loading ? "Checking..." : "Confirm →"}</button>
+          <button className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -285,16 +350,20 @@ function Dashboard({ sales, products }) {
   const history = sales.map(s => ({ date: s.date, actual: s.amount }));
   const { chartData, slope } = buildChartData(history, 7);
   const trending = slope >= 0;
-  const todaySales = history[history.length - 1]?.actual || 0;
-  const yesterdaySales = history[history.length - 2]?.actual || 0;
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const todaySales = sales.filter(s => s.date === today).reduce((sum, s) => sum + (s.amount || 0), 0);
+  const yesterdaySales = sales.filter(s => s.date === yesterday).reduce((sum, s) => sum + (s.amount || 0), 0);
+  const weekTotal = sales.filter(s => { const d = new Date(s.date); const w = new Date(); w.setDate(w.getDate() - 7); return d >= w; }).reduce((sum, s) => sum + (s.amount || 0), 0);
   const pct = yesterdaySales ? (((todaySales - yesterdaySales) / yesterdaySales) * 100).toFixed(1) : 0;
-  const weekTotal = history.slice(-7).reduce((s, d) => s + (d.actual || 0), 0);
   const lowStock = products.filter((p) => p.stock > 0 && p.stock <= p.low_threshold).length;
   const outStock = products.filter((p) => p.stock === 0).length;
+  const expiredSoon = products.filter(p => { const s = expiryStatus(p.expiry_date); return s && s.days <= 7; }).length;
 
   return (
     <div>
       <div className="page-header"><div className="page-title">Dashboard</div><div className="page-sub">Sales overview and 7-day forecast</div></div>
+      {expiredSoon > 0 && <div className="alert alert-warn" style={{ marginBottom: 20 }}>⚠️ {expiredSoon} product{expiredSoon > 1 ? "s" : ""} expiring within 7 days! Check your Inventory.</div>}
       {sales.length === 0 && (
         <div className="card" style={{ marginBottom: 28 }}>
           <div className="empty-state">
@@ -330,7 +399,7 @@ function Dashboard({ sales, products }) {
           </ResponsiveContainer>
           <div style={{ display: "flex", gap: 20, marginTop: 12, fontSize: 12, color: "var(--muted)" }}>
             <span><span style={{ color: "var(--accent)" }}>—</span> Actual sales</span>
-            <span><span style={{ color: "var(--accent2)" }}>- -</span> Predicted (7 days)</span>
+            <span><span style={{ color: "var(--accent2)" }}>- -</span> Predicted (7 days, based on last 14 days)</span>
           </div>
         </div>
       )}
@@ -355,56 +424,46 @@ function POSPage({ products, onUpdateProducts, onAddSale, userId }) {
   const [loading, setLoading] = useState(false);
   const [receipt, setReceipt] = useState(null);
   const scanRef = useRef();
-
   const total = cart.reduce((s, i) => s + i.qty * i.price, 0);
 
-  const addToCart = (prod) => {
-    if (prod.stock <= 0) return setFeedback({ type: "error", text: `${prod.name} is out of stock!` });
+  const addToCart = useCallback((prod) => {
+    if (prod.stock <= 0) { setFeedback({ type: "error", text: `${prod.name} is out of stock!` }); setTimeout(() => setFeedback(null), 2500); return; }
     setCart(prev => {
       const existing = prev.find(i => i.id === prod.id);
       if (existing) {
-        if (existing.qty >= prod.stock) return setFeedback({ type: "error", text: `Only ${prod.stock} ${prod.unit} of ${prod.name} in stock!` }) || prev;
+        if (existing.qty >= prod.stock) { setFeedback({ type: "error", text: `Only ${prod.stock} left!` }); setTimeout(() => setFeedback(null), 2500); return prev; }
         return prev.map(i => i.id === prod.id ? { ...i, qty: i.qty + 1 } : i);
       }
       return [...prev, { ...prod, qty: 1 }];
     });
-    setFeedback({ type: "success", text: `✓ ${prod.name} added to cart` });
-    setTimeout(() => setFeedback(null), 2000);
-  };
+    setFeedback({ type: "success", text: `✓ ${prod.name} added` });
+    setTimeout(() => setFeedback(null), 1500);
+  }, [products]);
 
   const handleScan = useCallback((code) => {
     if (!code.trim()) return;
     const prod = products.find(p => p.barcode === code.trim());
     if (prod) addToCart(prod);
-    else setFeedback({ type: "error", text: `Barcode ${code} not found in inventory` });
+    else { setFeedback({ type: "error", text: `Barcode ${code} not found` }); setTimeout(() => setFeedback(null), 2500); }
     setScanCode("");
-    setTimeout(() => setFeedback(null), 2500);
-  }, [products]);
+  }, [products, addToCart]);
 
-  const updateQty = (id, delta) => {
-    setCart(prev => prev.map(i => i.id === id ? { ...i, qty: Math.max(1, i.qty + delta) } : i));
-  };
+  const updateQty = (id, delta) => setCart(prev => prev.map(i => i.id === id ? { ...i, qty: Math.max(1, i.qty + delta) } : i));
   const removeFromCart = (id) => setCart(prev => prev.filter(i => i.id !== id));
 
   const checkout = async () => {
     if (!cart.length) return;
     setLoading(true);
     const today = new Date().toISOString().slice(0, 10);
+    const time = new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
     const note = cart.map(i => `${i.name} x${i.qty}`).join(", ");
-    const entry = { user_id: userId, date: today, amount: total, note };
+    const entry = { user_id: userId, date: today, amount: total, note, time };
     const { error } = await supabase.from("sales").insert(entry);
-    if (error) { setLoading(false); return setFeedback({ type: "error", text: error.message }); }
-    for (const item of cart) {
-      const newStock = item.stock - item.qty;
-      await supabase.from("products").update({ stock: Math.max(0, newStock) }).eq("id", item.id);
-    }
-    const updatedProducts = products.map(p => {
-      const sold = cart.find(i => i.id === p.id);
-      return sold ? { ...p, stock: Math.max(0, p.stock - sold.qty) } : p;
-    });
-    onUpdateProducts(updatedProducts);
+    if (error) { setLoading(false); return; }
+    for (const item of cart) await supabase.from("products").update({ stock: Math.max(0, item.stock - item.qty) }).eq("id", item.id);
+    onUpdateProducts(products.map(p => { const s = cart.find(i => i.id === p.id); return s ? { ...p, stock: Math.max(0, p.stock - s.qty) } : p; }));
     onAddSale(entry);
-    setReceipt({ items: [...cart], total, date: today });
+    setReceipt({ items: [...cart], total, date: today, time });
     setCart([]);
     setLoading(false);
   };
@@ -417,23 +476,22 @@ function POSPage({ products, onUpdateProducts, onAddSale, userId }) {
       <div className="card" style={{ maxWidth: 480, margin: "0 auto", textAlign: "center" }}>
         <div style={{ fontSize: 48, marginBottom: 12 }}>🧾</div>
         <div style={{ fontFamily: "var(--font-h)", fontSize: 20, fontWeight: 800, color: "var(--accent2)", marginBottom: 4 }}>Sale Complete!</div>
-        <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 24 }}>{receipt.date}</div>
+        <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 24 }}>{receipt.date} {receipt.time}</div>
         <div className="table-wrap" style={{ marginBottom: 16 }}>
           <table>
             <thead><tr><th>Item</th><th>Qty</th><th>Subtotal</th></tr></thead>
             <tbody>
               {receipt.items.map((i, idx) => (
-                <tr key={idx}>
-                  <td>{i.name}</td>
-                  <td style={{ color: "var(--muted)" }}>{i.qty}</td>
-                  <td style={{ fontFamily: "var(--font-h)", fontWeight: 700, color: "var(--accent)" }}>₱{(i.qty * i.price).toLocaleString()}</td>
-                </tr>
+                <tr key={idx}><td>{i.name}</td><td style={{ color: "var(--muted)" }}>{i.qty}</td><td style={{ fontFamily: "var(--font-h)", fontWeight: 700, color: "var(--accent)" }}>₱{(i.qty * i.price).toLocaleString()}</td></tr>
               ))}
             </tbody>
           </table>
         </div>
         <div style={{ fontFamily: "var(--font-h)", fontSize: 28, fontWeight: 800, color: "var(--accent)", marginBottom: 20 }}>Total: ₱{receipt.total.toLocaleString()}</div>
-        <button className="btn btn-primary" style={{ justifyContent: "center" }} onClick={() => setReceipt(null)}>New Sale →</button>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+          <button className="btn btn-primary" onClick={() => setReceipt(null)}>New Sale →</button>
+          <button className="btn btn-secondary" onClick={() => window.print()}>🖨️ Print Receipt</button>
+        </div>
       </div>
     </div>
   );
@@ -442,7 +500,6 @@ function POSPage({ products, onUpdateProducts, onAddSale, userId }) {
     <div>
       <div className="page-header"><div className="page-title">POS — Point of Sale</div><div className="page-sub">Scan barcodes or search products to build a sale</div></div>
       <div className="pos-wrap">
-        {/* Left: product selector */}
         <div>
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-title">Barcode Scanner</div>
@@ -457,42 +514,27 @@ function POSPage({ products, onUpdateProducts, onAddSale, userId }) {
             </div>
             {feedback && <div className={`scanner-feedback ${feedback.type === "success" ? "feedback-success" : "feedback-error"}`}>{feedback.text}</div>}
           </div>
-
           <div className="card">
             <div className="card-title">Or search and click a product</div>
-            <div className="input-group">
-              <input className="input-field" placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
+            <div className="input-group"><input className="input-field" placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
               {filtered.map(p => (
-                <button key={p.id} onClick={() => addToCart(p)} style={{
-                  background: p.stock === 0 ? "rgba(42,46,43,0.5)" : "var(--surface)",
-                  border: `1px solid ${p.stock === 0 ? "var(--border)" : "var(--border)"}`,
-                  borderRadius: "var(--r)", padding: "12px", textAlign: "left", cursor: p.stock === 0 ? "not-allowed" : "pointer",
-                  opacity: p.stock === 0 ? 0.5 : 1, transition: "border-color 0.15s"
-                }}
+                <button key={p.id} onClick={() => addToCart(p)} style={{ background: p.stock === 0 ? "rgba(42,46,43,0.5)" : "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: "12px", textAlign: "left", cursor: p.stock === 0 ? "not-allowed" : "pointer", opacity: p.stock === 0 ? 0.5 : 1, transition: "border-color 0.15s" }}
                   onMouseEnter={e => { if (p.stock > 0) e.currentTarget.style.borderColor = "var(--accent)"; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; }}>
                   <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, color: "var(--text)" }}>{p.name}</div>
                   <div style={{ color: "var(--accent)", fontFamily: "var(--font-h)", fontWeight: 700, fontSize: 14 }}>₱{p.price}</div>
-                  <div style={{ fontSize: 11, color: p.stock === 0 ? "var(--danger)" : "var(--muted)", marginTop: 2 }}>{p.stock === 0 ? "Out of stock" : `${p.stock} ${p.unit} left`}</div>
+                  <div style={{ fontSize: 11, color: p.stock === 0 ? "var(--danger)" : "var(--muted)", marginTop: 2 }}>{p.stock === 0 ? "Out of stock" : `${p.stock} left`}</div>
                 </button>
               ))}
-              {filtered.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13, gridColumn: "1/-1", padding: "16px 0" }}>No products found. Add products in Inventory first.</div>}
+              {filtered.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13, gridColumn: "1/-1", padding: "16px 0" }}>No products found.</div>}
             </div>
           </div>
         </div>
-
-        {/* Right: cart */}
         <div className="pos-cart">
           <div className="pos-cart-header">🛒 Cart ({cart.length} item{cart.length !== 1 ? "s" : ""})</div>
           <div className="pos-cart-items">
-            {cart.length === 0 && (
-              <div style={{ textAlign: "center", padding: "32px 16px", color: "var(--muted)", fontSize: 13 }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>🛒</div>
-                Scan a barcode or click a product to add it here
-              </div>
-            )}
+            {cart.length === 0 && <div style={{ textAlign: "center", padding: "32px 16px", color: "var(--muted)", fontSize: 13 }}><div style={{ fontSize: 32, marginBottom: 8 }}>🛒</div>Scan or click a product to add</div>}
             {cart.map(item => (
               <div key={item.id} className="pos-cart-item">
                 <div className="pos-cart-item-name">{item.name}</div>
@@ -521,20 +563,31 @@ function POSPage({ products, onUpdateProducts, onAddSale, userId }) {
 }
 
 // ── SALES ENTRY ───────────────────────────────────────────────────────────────
-function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
+function SalesEntry({ sales, onAdd, onUpdate, onDelete, userId, products, onUpdateProducts, userEmail }) {
   const [tab, setTab] = useState("quick");
   const [msg, setMsg] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [qForm, setQForm] = useState({ date: new Date().toISOString().slice(0, 10), amount: "", note: "" });
+  const [qForm, setQForm] = useState({ date: new Date().toISOString().slice(0, 10), time: "", amount: "", note: "" });
   const [iDate, setIDate] = useState(new Date().toISOString().slice(0, 10));
+  const [iTime, setITime] = useState("");
   const [iNote, setINote] = useState("");
   const [items, setItems] = useState([{ search: "", product: null, qty: 1, price: 0 }]);
   const [dragOver, setDragOver] = useState(false);
   const [preview, setPreview] = useState(null);
   const fileRef = useRef();
 
-  const iTotal = items.reduce((s, i) => s + (i.product ? i.qty * i.price : 0), 0);
+  // Print state
+  const [printFrom, setPrintFrom] = useState("");
+  const [printTo, setPrintTo] = useState("");
+  const [printData, setPrintData] = useState(null);
 
+  // Edit/delete state
+  const [editSale, setEditSale] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [pwModal, setPwModal] = useState(null); // { action: 'edit'|'delete', sale }
+
+  const iTotal = items.reduce((s, i) => s + (i.product ? i.qty * i.price : 0), 0);
   const addItem = () => setItems([...items, { search: "", product: null, qty: 1, price: 0 }]);
   const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx));
   const updateItem = (idx, changes) => setItems(items.map((it, i) => i === idx ? { ...it, ...changes } : it));
@@ -543,13 +596,13 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
   const submitQuick = async () => {
     if (!qForm.amount || isNaN(qForm.amount) || Number(qForm.amount) <= 0) return setMsg({ type: "error", text: "Enter a valid sales amount (₱)." });
     setLoading(true);
-    const entry = { user_id: userId, date: qForm.date, amount: Number(qForm.amount), note: qForm.note };
+    const entry = { user_id: userId, date: qForm.date, time: qForm.time || null, amount: Number(qForm.amount), note: qForm.note };
     const { error } = await supabase.from("sales").insert(entry);
     setLoading(false);
     if (error) return setMsg({ type: "error", text: error.message });
     onAdd(entry);
-    setMsg({ type: "success", text: `₱${Number(qForm.amount).toLocaleString()} recorded for ${qForm.date} ✓` });
-    setQForm({ date: new Date().toISOString().slice(0, 10), amount: "", note: "" });
+    setMsg({ type: "success", text: `₱${Number(qForm.amount).toLocaleString()} recorded ✓` });
+    setQForm({ date: new Date().toISOString().slice(0, 10), time: "", amount: "", note: "" });
     setTimeout(() => setMsg(null), 3000);
   };
 
@@ -562,7 +615,7 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
     setLoading(true);
     const total = validItems.reduce((s, i) => s + i.qty * i.price, 0);
     const note = iNote || validItems.map(i => `${i.product.name} x${i.qty}`).join(", ");
-    const entry = { user_id: userId, date: iDate, amount: total, note };
+    const entry = { user_id: userId, date: iDate, time: iTime || null, amount: total, note };
     const { error } = await supabase.from("sales").insert(entry);
     if (error) { setLoading(false); return setMsg({ type: "error", text: error.message }); }
     for (const it of validItems) await supabase.from("products").update({ stock: it.product.stock - it.qty }).eq("id", it.product.id);
@@ -571,7 +624,7 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
     setLoading(false);
     setMsg({ type: "success", text: `₱${total.toLocaleString()} itemized sale recorded ✓` });
     setItems([{ search: "", product: null, qty: 1, price: 0 }]);
-    setINote("");
+    setINote(""); setITime("");
     setTimeout(() => setMsg(null), 4000);
   };
 
@@ -585,23 +638,17 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
         const parsed = rows.map(r => ({
           date: r.date || r.Date || r.DATE || "",
           amount: Number(r.amount || r.Amount || r.AMOUNT || r.sales || r.Sales || 0),
-          note: r.note || r.Note || r.NOTE || ""
+          note: r.note || r.Note || r.NOTE || "",
+          time: r.time || r.Time || ""
         })).filter(r => r.date && r.amount > 0);
         if (!parsed.length) return setMsg({ type: "error", text: "No valid rows found. Make sure your file has 'date' and 'amount' columns." });
-        setPreview(parsed);
-        setTab("import");
-      } catch (err) {
-        setMsg({ type: "error", text: "Could not read file. Make sure it's a valid .xlsx or .csv file." });
-      }
+        setPreview(parsed); setTab("import");
+      } catch { setMsg({ type: "error", text: "Could not read file. Make sure it's a valid .xlsx or .csv file." }); }
     };
     reader.readAsBinaryString(file);
   };
 
-  const handleDrop = (e) => {
-    e.preventDefault(); setDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) parseFile(file);
-  };
+  const handleDrop = (e) => { e.preventDefault(); setDragOver(false); const file = e.dataTransfer.files[0]; if (file) parseFile(file); };
 
   const confirmImport = async () => {
     if (!preview?.length) return;
@@ -611,30 +658,135 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
     setLoading(false);
     if (error) return setMsg({ type: "error", text: error.message });
     entries.forEach(e => onAdd(e));
-    setMsg({ type: "success", text: `✓ ${entries.length} sales records imported successfully!` });
-    setPreview(null);
-    setTab("quick");
+    setMsg({ type: "success", text: `✓ ${entries.length} sales records imported!` });
+    setPreview(null); setTab("quick");
     setTimeout(() => setMsg(null), 4000);
   };
 
   const downloadTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
-      ["date", "amount", "note"],
-      ["2026-05-01", 2500, "Morning sales"],
-      ["2026-05-02", 3100, ""],
-      ["2026-05-03", 1800, "Rainy day"],
+      ["date", "amount", "note", "time"],
+      ["2026-05-01", 2500, "Morning sales", "09:00 AM"],
+      ["2026-05-02", 3100, "", ""],
+      ["2026-05-03", 1800, "Rainy day", "02:30 PM"],
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Sales");
     XLSX.writeFile(wb, "sales_template.xlsx");
   };
 
+  const generatePrint = () => {
+    if (!printFrom || !printTo) return setMsg({ type: "error", text: "Select a date range to print." });
+    const filtered = sales.filter(s => s.date >= printFrom && s.date <= printTo).sort((a, b) => a.date.localeCompare(b.date));
+    if (!filtered.length) return setMsg({ type: "error", text: "No sales found in that date range." });
+    setPrintData(filtered);
+  };
+
+  const doPrint = () => window.print();
+
+  // Edit sale
+  const startEdit = (sale) => setPwModal({ action: "edit", sale });
+  const startDelete = (sale) => setPwModal({ action: "delete", sale });
+
+  const confirmEdit = async () => {
+    const { error } = await supabase.from("sales").update({ date: editForm.date, amount: Number(editForm.amount), note: editForm.note, time: editForm.time || null }).eq("id", editSale.id);
+    if (error) return;
+    onUpdate({ ...editSale, ...editForm, amount: Number(editForm.amount) });
+    setEditSale(null);
+    setMsg({ type: "success", text: "Sale updated ✓" });
+    setTimeout(() => setMsg(null), 3000);
+  };
+
+  const confirmDelete = async () => {
+    const { error } = await supabase.from("sales").delete().eq("id", deleteTarget.id);
+    if (error) return;
+    onDelete(deleteTarget.id);
+    setDeleteTarget(null);
+    setMsg({ type: "success", text: "Sale record deleted ✓" });
+    setTimeout(() => setMsg(null), 3000);
+  };
+
   const history = sales.map(s => ({ date: s.date, actual: s.amount }));
   const { chartData, slope } = buildChartData(history, 30);
   const trending = slope >= 0;
 
+  if (printData) return (
+    <div>
+      <div className="no-print" style={{ marginBottom: 20, display: "flex", gap: 10 }}>
+        <button className="btn btn-primary" onClick={doPrint}>🖨️ Print Now</button>
+        <button className="btn btn-secondary" onClick={() => setPrintData(null)}>← Back</button>
+      </div>
+      <div style={{ background: "white", color: "black", padding: 32, borderRadius: 12 }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>SalesForecast — Sales Report</div>
+          <div style={{ fontSize: 14, color: "#666" }}>{printFrom} to {printTo}</div>
+          <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>Total records: {printData.length} · Total sales: ₱{printData.reduce((s, r) => s + r.amount, 0).toLocaleString()}</div>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: "#f5f5f5" }}>
+              <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #ddd" }}>Date</th>
+              <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #ddd" }}>Time</th>
+              <th style={{ padding: "10px 12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Amount</th>
+              <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #ddd" }}>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {printData.map((s, i) => (
+              <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
+                <td style={{ padding: "9px 12px" }}>{s.date}</td>
+                <td style={{ padding: "9px 12px", color: "#888" }}>{s.time || "—"}</td>
+                <td style={{ padding: "9px 12px", textAlign: "right", fontWeight: 700 }}>₱{s.amount?.toLocaleString()}</td>
+                <td style={{ padding: "9px 12px", color: "#666" }}>{s.note || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ background: "#f0f0f0", fontWeight: 800 }}>
+              <td colSpan={2} style={{ padding: "12px" }}>TOTAL</td>
+              <td style={{ padding: "12px", textAlign: "right" }}>₱{printData.reduce((s, r) => s + r.amount, 0).toLocaleString()}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+        <div style={{ marginTop: 24, fontSize: 11, color: "#aaa", textAlign: "center" }}>Generated by SalesForecast · {new Date().toLocaleDateString()}</div>
+      </div>
+    </div>
+  );
+
   return (
     <div>
+      {pwModal && (
+        <PasswordModal
+          title={pwModal.action === "edit" ? "Confirm Edit" : "Confirm Delete"}
+          subtitle={pwModal.action === "edit" ? `You are about to edit a sales record.` : `You are about to permanently delete this sales record.`}
+          userEmail={userEmail}
+          onConfirm={() => {
+            if (pwModal.action === "edit") { setEditSale(pwModal.sale); setEditForm({ date: pwModal.sale.date, amount: pwModal.sale.amount, note: pwModal.sale.note || "", time: pwModal.sale.time || "" }); }
+            else { setDeleteTarget(pwModal.sale); confirmDelete(); }
+            setPwModal(null);
+          }}
+          onCancel={() => setPwModal(null)}
+        />
+      )}
+
+      {editSale && (
+        <div className="modal-overlay" onClick={() => setEditSale(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">✏️ Edit Sale Record</div>
+            <div className="modal-sub">Update the details below</div>
+            <div className="input-group"><label className="input-label">Date</label><input className="input-field" type="date" value={editForm.date} onChange={e => setEditForm({ ...editForm, date: e.target.value })} /></div>
+            <div className="input-group"><label className="input-label">Time (optional)</label><input className="input-field" type="time" value={editForm.time} onChange={e => setEditForm({ ...editForm, time: e.target.value })} /></div>
+            <div className="input-group"><label className="input-label">Amount (₱)</label><input className="input-field" type="number" value={editForm.amount} onChange={e => setEditForm({ ...editForm, amount: e.target.value })} /></div>
+            <div className="input-group"><label className="input-label">Note</label><input className="input-field" value={editForm.note} onChange={e => setEditForm({ ...editForm, note: e.target.value })} /></div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="btn btn-primary" onClick={confirmEdit}>Save Changes →</button>
+              <button className="btn btn-secondary" onClick={() => setEditSale(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="page-header"><div className="page-title">Record Sales</div><div className="page-sub">Log sales manually, itemized, or import from Excel</div></div>
       <div className="grid-2" style={{ marginBottom: 28 }}>
         <div className="card">
@@ -642,13 +794,17 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
             <button className={`tab-btn ${tab === "quick" ? "active" : ""}`} onClick={() => setTab("quick")}>⚡ Quick</button>
             <button className={`tab-btn ${tab === "itemized" ? "active" : ""}`} onClick={() => setTab("itemized")}>🧾 Itemized</button>
             <button className={`tab-btn ${tab === "import" ? "active" : ""}`} onClick={() => setTab("import")}>📂 Import Excel</button>
+            <button className={`tab-btn ${tab === "print" ? "active" : ""}`} onClick={() => setTab("print")}>🖨️ Print</button>
           </div>
 
           {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
           {tab === "quick" && (
             <>
-              <div className="input-group"><label className="input-label">Date</label><input className="input-field" type="date" value={qForm.date} onChange={(e) => setQForm({ ...qForm, date: e.target.value })} /></div>
+              <div className="grid-2">
+                <div className="input-group"><label className="input-label">Date</label><input className="input-field" type="date" value={qForm.date} onChange={(e) => setQForm({ ...qForm, date: e.target.value })} /></div>
+                <div className="input-group"><label className="input-label">Time (optional)</label><input className="input-field" type="time" value={qForm.time} onChange={(e) => setQForm({ ...qForm, time: e.target.value })} /></div>
+              </div>
               <div className="input-group"><label className="input-label">Total sales amount (₱)</label><input className="input-field" type="number" placeholder="e.g. 2500" value={qForm.amount} onChange={(e) => setQForm({ ...qForm, amount: e.target.value })} onKeyDown={(e) => e.key === "Enter" && submitQuick()} /></div>
               <div className="input-group"><label className="input-label">Note (optional)</label><input className="input-field" placeholder="e.g. holiday, rainy day..." value={qForm.note} onChange={(e) => setQForm({ ...qForm, note: e.target.value })} /></div>
               <button className="btn btn-primary" onClick={submitQuick} disabled={loading}>{loading ? "Saving..." : "Save Sales Record →"}</button>
@@ -659,9 +815,10 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
             <>
               <div className="grid-2" style={{ marginBottom: 12 }}>
                 <div className="input-group" style={{ marginBottom: 0 }}><label className="input-label">Date</label><input className="input-field" type="date" value={iDate} onChange={(e) => setIDate(e.target.value)} /></div>
-                <div className="input-group" style={{ marginBottom: 0 }}><label className="input-label">Note (optional)</label><input className="input-field" placeholder="e.g. morning sales..." value={iNote} onChange={(e) => setINote(e.target.value)} /></div>
+                <div className="input-group" style={{ marginBottom: 0 }}><label className="input-label">Time (optional)</label><input className="input-field" type="time" value={iTime} onChange={(e) => setITime(e.target.value)} /></div>
               </div>
-              <div style={{ marginTop: 16 }}>
+              <div className="input-group"><label className="input-label">Note (optional)</label><input className="input-field" placeholder="e.g. morning sales..." value={iNote} onChange={(e) => setINote(e.target.value)} /></div>
+              <div style={{ marginTop: 8 }}>
                 <div className="item-row-header">
                   {["Product","Qty","Price","Subtotal",""].map((h, i) => <span key={i} style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.8px" }}>{h}</span>)}
                 </div>
@@ -696,9 +853,7 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
                   <div style={{ fontSize: 36, marginBottom: 12 }}>📂</div>
                   <div style={{ fontWeight: 600, marginBottom: 6 }}>Drop your Excel file here</div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>or click to browse — supports .xlsx and .csv</div>
-                  <div className="alert alert-info" style={{ textAlign: "left", fontSize: 12 }}>
-                    File must have columns: <strong>date</strong> (YYYY-MM-DD), <strong>amount</strong> (number), <strong>note</strong> (optional)
-                  </div>
+                  <div className="alert alert-info" style={{ textAlign: "left", fontSize: 12 }}>File must have columns: <strong>date</strong> (YYYY-MM-DD), <strong>amount</strong>, <strong>note</strong>, <strong>time</strong> (all optional except date and amount)</div>
                   <input ref={fileRef} type="file" accept=".xlsx,.csv,.xls" style={{ display: "none" }} onChange={(e) => e.target.files[0] && parseFile(e.target.files[0])} />
                 </div>
               ) : (
@@ -706,11 +861,12 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
                   <div className="alert alert-success">{preview.length} rows found and ready to import</div>
                   <div className="table-wrap" style={{ marginBottom: 16, maxHeight: 240, overflowY: "auto" }}>
                     <table>
-                      <thead><tr><th>Date</th><th>Amount</th><th>Note</th></tr></thead>
+                      <thead><tr><th>Date</th><th>Time</th><th>Amount</th><th>Note</th></tr></thead>
                       <tbody>
                         {preview.slice(0, 50).map((r, i) => (
                           <tr key={i}>
                             <td style={{ color: "var(--muted)" }}>{r.date}</td>
+                            <td style={{ color: "var(--muted)" }}>{r.time || "—"}</td>
                             <td style={{ fontFamily: "var(--font-h)", fontWeight: 700, color: "var(--accent)" }}>₱{r.amount.toLocaleString()}</td>
                             <td style={{ color: "var(--muted)", fontSize: 12 }}>{r.note || "—"}</td>
                           </tr>
@@ -724,6 +880,17 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
                   </div>
                 </>
               )}
+            </>
+          )}
+
+          {tab === "print" && (
+            <>
+              <div style={{ marginBottom: 16, fontSize: 13, color: "var(--muted)" }}>Select a date range to generate a printable sales report</div>
+              <div className="grid-2">
+                <div className="input-group"><label className="input-label">From date</label><input className="input-field" type="date" value={printFrom} onChange={e => setPrintFrom(e.target.value)} /></div>
+                <div className="input-group"><label className="input-label">To date</label><input className="input-field" type="date" value={printTo} onChange={e => setPrintTo(e.target.value)} /></div>
+              </div>
+              <button className="btn btn-primary" onClick={generatePrint}>Generate Print Preview →</button>
             </>
           )}
         </div>
@@ -757,16 +924,23 @@ function SalesEntry({ sales, onAdd, userId, products, onUpdateProducts }) {
         <div className="card-title">Recent records ({sales.length})</div>
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Date</th><th>Amount</th><th>Note</th></tr></thead>
+            <thead><tr><th>Date</th><th>Time</th><th>Amount</th><th>Note</th><th>Actions</th></tr></thead>
             <tbody>
-              {[...sales].reverse().slice(0, 20).map((s, i) => (
+              {[...sales].reverse().slice(0, 30).map((s, i) => (
                 <tr key={i}>
                   <td style={{ color: "var(--muted)" }}>{s.date}</td>
+                  <td style={{ color: "var(--muted)", fontSize: 12 }}>{s.time || "—"}</td>
                   <td style={{ fontFamily: "var(--font-h)", fontWeight: 700, color: "var(--accent)" }}>₱{s.amount?.toLocaleString()}</td>
                   <td style={{ color: "var(--muted)", fontSize: 12 }}>{s.note || "—"}</td>
+                  <td>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button className="btn btn-secondary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => startEdit(s)}>✏️ Edit</button>
+                      <button className="btn btn-danger" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => startDelete(s)}>🗑️ Delete</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
-              {sales.length === 0 && <tr><td colSpan={3} style={{ color: "var(--muted)", textAlign: "center", padding: 24 }}>No sales recorded yet.</td></tr>}
+              {sales.length === 0 && <tr><td colSpan={5} style={{ color: "var(--muted)", textAlign: "center", padding: 24 }}>No sales recorded yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -793,7 +967,7 @@ function ForecastPage({ sales }) {
 
   return (
     <div>
-      <div className="page-header"><div className="page-title">Sales Forecast</div><div className="page-sub">Predicted trend based on your sales history</div></div>
+      <div className="page-header"><div className="page-title">Sales Forecast</div><div className="page-sub">Predicted trend based on your last 14 days of sales</div></div>
       <div className="stats-grid" style={{ gridTemplateColumns: "repeat(3,1fr)", marginBottom: 28 }}>
         <div className="stat-card"><div className="stat-label">Trend direction</div><div className="stat-value" style={{ color: trending ? "var(--accent2)" : "var(--danger)", fontSize: 22 }}>{trending ? "Going UP ↑" : "Going DOWN ↓"}</div></div>
         <div className="stat-card"><div className="stat-label">Slope (per day)</div><div className="stat-value" style={{ fontSize: 24 }}>₱{Math.abs(slope).toFixed(0)}</div><div className={`stat-badge ${trending ? "badge-up" : "badge-down"}`}>{trending ? "gaining" : "losing"} per day avg</div></div>
@@ -820,7 +994,7 @@ function ForecastPage({ sales }) {
         </ResponsiveContainer>
         <div style={{ display: "flex", gap: 20, marginTop: 12, fontSize: 12, color: "var(--muted)" }}>
           <span><span style={{ color: "var(--accent)" }}>—</span> Actual sales</span>
-          <span><span style={{ color: "var(--accent2)" }}>- -</span> Forecast ({period} days ahead)</span>
+          <span><span style={{ color: "var(--accent2)" }}>- -</span> Forecast ({period} days)</span>
         </div>
       </div>
     </div>
@@ -836,8 +1010,8 @@ function Inventory({ products, onUpdate, userId }) {
   const [editQty, setEditQty] = useState("");
   const [addMode, setAddMode] = useState("none");
   const [saving, setSaving] = useState(false);
-  const [newProd, setNewProd] = useState({ barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 });
-  const [bulkRows, setBulkRows] = useState(Array(3).fill(null).map(() => ({ barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 })));
+  const [newProd, setNewProd] = useState({ barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10, expiry_date: "" });
+  const [bulkRows, setBulkRows] = useState(Array(3).fill(null).map(() => ({ barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10, expiry_date: "" })));
   const UNITS = ["pc","pack","bottle","sachet","stick","box","can","kg","g"];
 
   const handleScan = useCallback(async (code) => {
@@ -849,7 +1023,7 @@ function Inventory({ products, onUpdate, userId }) {
       onUpdate(products.map((p) => p.id === prod.id ? { ...p, stock: newStock } : p));
       setFeedback({ type: "success", text: `✓ Scanned: ${prod.name} — stock now ${newStock} ${prod.unit}` });
     } else {
-      setFeedback({ type: "error", text: `Barcode ${code} not found. Add it manually below.` });
+      setFeedback({ type: "error", text: `Barcode ${code} not found. Add it below.` });
     }
     setScanCode("");
     setTimeout(() => setFeedback(null), 4000);
@@ -878,12 +1052,12 @@ function Inventory({ products, onUpdate, userId }) {
   const addSingleProduct = async () => {
     if (!newProd.name) return;
     setSaving(true);
-    const entry = { ...newProd, user_id: userId, price: Number(newProd.price), stock: Number(newProd.stock), low_threshold: Number(newProd.low_threshold) };
+    const entry = { ...newProd, user_id: userId, price: Number(newProd.price), stock: Number(newProd.stock), low_threshold: Number(newProd.low_threshold), expiry_date: newProd.expiry_date || null };
     const { data, error } = await supabase.from("products").insert(entry).select().single();
     setSaving(false);
     if (error) return;
     onUpdate([...products, data]);
-    setNewProd({ barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 });
+    setNewProd({ barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10, expiry_date: "" });
     setAddMode("none");
   };
 
@@ -891,12 +1065,12 @@ function Inventory({ products, onUpdate, userId }) {
     const valid = bulkRows.filter(r => r.name.trim());
     if (!valid.length) return;
     setSaving(true);
-    const entries = valid.map(r => ({ ...r, user_id: userId, price: Number(r.price), stock: Number(r.stock), low_threshold: Number(r.low_threshold) }));
+    const entries = valid.map(r => ({ ...r, user_id: userId, price: Number(r.price), stock: Number(r.stock), low_threshold: Number(r.low_threshold), expiry_date: r.expiry_date || null }));
     const { data, error } = await supabase.from("products").insert(entries).select();
     setSaving(false);
     if (error) return;
     onUpdate([...products, ...data]);
-    setBulkRows(Array(3).fill(null).map(() => ({ barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 })));
+    setBulkRows(Array(3).fill(null).map(() => ({ barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10, expiry_date: "" })));
     setAddMode("none");
   };
 
@@ -906,9 +1080,20 @@ function Inventory({ products, onUpdate, userId }) {
     return { cls: "stock-ok", label: `${p.stock} ${p.unit}` };
   };
 
+  const expiredCount = products.filter(p => { const s = expiryStatus(p.expiry_date); return s && s.days < 0; }).length;
+  const expiringSoon = products.filter(p => { const s = expiryStatus(p.expiry_date); return s && s.days >= 0 && s.days <= 7; }).length;
+
   return (
     <div>
       <div className="page-header"><div className="page-title">Inventory</div><div className="page-sub">Scan barcodes or manage stock manually</div></div>
+
+      {(expiredCount > 0 || expiringSoon > 0) && (
+        <div style={{ marginBottom: 20 }}>
+          {expiredCount > 0 && <div className="alert alert-error">🚨 {expiredCount} product{expiredCount > 1 ? "s have" : " has"} already expired! Remove them immediately.</div>}
+          {expiringSoon > 0 && <div className="alert alert-warn">⚠️ {expiringSoon} product{expiringSoon > 1 ? "s are" : " is"} expiring within 7 days.</div>}
+        </div>
+      )}
+
       <div className="card" style={{ marginBottom: 24 }}>
         <div className="card-title">USB Barcode Scanner</div>
         <div className={`scanner-area ${scanFocus ? "active" : ""}`} onClick={() => document.getElementById("invScan")?.focus()}>
@@ -938,6 +1123,7 @@ function Inventory({ products, onUpdate, userId }) {
             <div className="input-group"><label className="input-label">Starting stock</label><input className="input-field" type="number" placeholder="0" value={newProd.stock} onChange={(e) => setNewProd({ ...newProd, stock: e.target.value })} /></div>
             <div className="input-group"><label className="input-label">Unit</label><select className="input-field" value={newProd.unit} onChange={(e) => setNewProd({ ...newProd, unit: e.target.value })}>{UNITS.map(u => <option key={u}>{u}</option>)}</select></div>
             <div className="input-group"><label className="input-label">Low stock alert at</label><input className="input-field" type="number" placeholder="10" value={newProd.low_threshold} onChange={(e) => setNewProd({ ...newProd, low_threshold: e.target.value })} /></div>
+            <div className="input-group"><label className="input-label">Expiry date (optional)</label><input className="input-field" type="date" value={newProd.expiry_date} onChange={(e) => setNewProd({ ...newProd, expiry_date: e.target.value })} /></div>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button className="btn btn-primary" onClick={addSingleProduct} disabled={saving}>{saving ? "Saving..." : "Save Product →"}</button>
@@ -950,23 +1136,24 @@ function Inventory({ products, onUpdate, userId }) {
         <div className="card" style={{ marginBottom: 20 }}>
           <div className="card-title">Bulk add products</div>
           <div style={{ overflowX: "auto" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr 0.8fr 0.8fr 0.8fr 0.8fr 36px", gap: 8, marginBottom: 6, minWidth: 700 }}>
-              {["Barcode","Name *","Price (₱)","Stock","Unit","Low Alert",""].map((h, i) => <span key={i} style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.8px" }}>{h}</span>)}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr 0.8fr 0.8fr 0.8fr 0.8fr 1fr 36px", gap: 8, marginBottom: 6, minWidth: 900 }}>
+              {["Barcode","Name *","Price","Stock","Unit","Low Alert","Expiry Date",""].map((h, i) => <span key={i} style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.8px" }}>{h}</span>)}
             </div>
             {bulkRows.map((row, idx) => (
-              <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr 0.8fr 0.8fr 0.8fr 0.8fr 36px", gap: 8, marginBottom: 8, alignItems: "center", minWidth: 700 }}>
+              <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr 0.8fr 0.8fr 0.8fr 0.8fr 1fr 36px", gap: 8, marginBottom: 8, alignItems: "center", minWidth: 900 }}>
                 <input className="input-field" placeholder="Barcode" value={row.barcode} onChange={(e) => setBulkRows(bulkRows.map((r, i) => i === idx ? { ...r, barcode: e.target.value } : r))} style={{ padding: "9px 10px" }} />
                 <input className="input-field" placeholder="Product name" value={row.name} onChange={(e) => setBulkRows(bulkRows.map((r, i) => i === idx ? { ...r, name: e.target.value } : r))} style={{ padding: "9px 10px" }} />
                 <input className="input-field" type="number" placeholder="0" value={row.price} onChange={(e) => setBulkRows(bulkRows.map((r, i) => i === idx ? { ...r, price: e.target.value } : r))} style={{ padding: "9px 10px" }} />
                 <input className="input-field" type="number" placeholder="0" value={row.stock} onChange={(e) => setBulkRows(bulkRows.map((r, i) => i === idx ? { ...r, stock: e.target.value } : r))} style={{ padding: "9px 10px" }} />
                 <select className="input-field" value={row.unit} onChange={(e) => setBulkRows(bulkRows.map((r, i) => i === idx ? { ...r, unit: e.target.value } : r))} style={{ padding: "9px 10px" }}>{UNITS.map(u => <option key={u}>{u}</option>)}</select>
                 <input className="input-field" type="number" placeholder="10" value={row.low_threshold} onChange={(e) => setBulkRows(bulkRows.map((r, i) => i === idx ? { ...r, low_threshold: e.target.value } : r))} style={{ padding: "9px 10px" }} />
+                <input className="input-field" type="date" value={row.expiry_date} onChange={(e) => setBulkRows(bulkRows.map((r, i) => i === idx ? { ...r, expiry_date: e.target.value } : r))} style={{ padding: "9px 10px" }} />
                 <button className="btn btn-danger" style={{ padding: "8px 10px" }} onClick={() => setBulkRows(bulkRows.filter((_, i) => i !== idx))}>✕</button>
               </div>
             ))}
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-            <button className="btn btn-secondary" onClick={() => setBulkRows([...bulkRows, { barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10 }])}>+ Add row</button>
+            <button className="btn btn-secondary" onClick={() => setBulkRows([...bulkRows, { barcode: "", name: "", price: "", stock: "", unit: "pc", low_threshold: 10, expiry_date: "" }])}>+ Add row</button>
             <button className="btn btn-primary" onClick={addBulkProducts} disabled={saving}>{saving ? "Saving..." : "Save All →"}</button>
             <button className="btn btn-secondary" onClick={() => setAddMode("none")}>Cancel</button>
           </div>
@@ -980,10 +1167,11 @@ function Inventory({ products, onUpdate, userId }) {
         ) : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Product</th><th>Barcode</th><th>Price</th><th>Stock</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Product</th><th>Barcode</th><th>Price</th><th>Stock</th><th>Expiry</th><th>Actions</th></tr></thead>
               <tbody>
                 {products.map((p) => {
                   const s = stockStatus(p);
+                  const exp = expiryStatus(p.expiry_date);
                   return (
                     <tr key={p.id}>
                       <td style={{ fontWeight: 500 }}>{p.name}</td>
@@ -998,6 +1186,7 @@ function Inventory({ products, onUpdate, userId }) {
                           </div>
                         ) : <span className={`stock-pill ${s.cls}`}>{s.label}</span>}
                       </td>
+                      <td>{exp ? <span className={`stock-pill ${exp.cls}`}>{exp.label}</span> : <span style={{ color: "var(--muted)", fontSize: 12 }}>—</span>}</td>
                       <td>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           <button className="btn btn-secondary" style={{ padding: "5px 10px", fontSize: 13 }} onClick={() => adjustStock(p, -1)}>−</button>
@@ -1021,50 +1210,37 @@ function Inventory({ products, onUpdate, userId }) {
 // ── HELP PAGE ─────────────────────────────────────────────────────────────────
 function HelpPage() {
   const sections = [
-    {
-      icon: "🚀", title: "Getting Started",
-      steps: [
-        { title: "Create your account", desc: "Click 'Register free' on the login page. Enter your store name, email, and password." },
-        { title: "Add your products", desc: "Go to Inventory → click 'Add Single Product' or 'Bulk Add Products' to add all your items with their prices and stock counts." },
-        { title: "Start recording sales", desc: "Go to Record Sales or use the POS page to start logging your daily sales." },
-      ]
-    },
-    {
-      icon: "🛒", title: "POS — Point of Sale (Live Selling)",
-      steps: [
-        { title: "Open the POS page", desc: "Click 'POS' in the sidebar. This is your cashier screen for live transactions." },
-        { title: "Scan or search products", desc: "Plug in your USB barcode scanner and scan items — they'll be added to the cart automatically. Or search and click a product to add it." },
-        { title: "Adjust quantities", desc: "Use the + and − buttons next to each cart item to change the quantity." },
-        { title: "Checkout", desc: "Click 'Checkout' when done. The sale is saved to your records and stock is automatically deducted." },
-      ]
-    },
-    {
-      icon: "💰", title: "Recording Sales",
-      steps: [
-        { title: "⚡ Quick Sale", desc: "Just enter the date and total amount. Best for end-of-day totals." },
-        { title: "🧾 Itemized Sale", desc: "Search and add products one by one. Quantities and totals are calculated automatically. Stock is deducted when saved." },
-        { title: "📂 Import from Excel", desc: "Download the template, fill it in with your sales data (date, amount, note), then upload it. Great for importing past records." },
-      ]
-    },
-    {
-      icon: "📦", title: "Managing Inventory",
-      steps: [
-        { title: "Add products", desc: "Use 'Add Single Product' for one item or 'Bulk Add' to add many at once in a spreadsheet-like table." },
-        { title: "USB Barcode Scanner", desc: "Click the scanner area to activate it, then scan a barcode — it will add +1 stock to that product automatically." },
-        { title: "Adjust stock manually", desc: "Use the + and − buttons or click Edit to set an exact stock count for any product." },
-        { title: "Low stock alerts", desc: "Set a 'low stock alert' number when adding a product. When stock falls below that number, it shows as orange in your inventory." },
-        { title: "Delete a product", desc: "Click the Delete button next to any product to remove it from your inventory." },
-      ]
-    },
-    {
-      icon: "📈", title: "Understanding the Forecast",
-      steps: [
-        { title: "How it works", desc: "The app uses linear regression — it looks at your past sales and finds the trend line to predict future sales." },
-        { title: "Going UP or DOWN", desc: "If your sales trend line is going upward, the forecast shows 📈 Going UP. If it's going down, it shows 📉 Going DOWN." },
-        { title: "How many days?", desc: "On the Forecast page, you can switch between 7-day, 14-day, and 30-day predictions." },
-        { title: "Minimum data needed", desc: "You need at least 3 days of sales records before a forecast can be generated." },
-      ]
-    },
+    { icon: "🚀", title: "Getting Started", steps: [
+      { title: "Create your account", desc: "Click 'Register free' on the login page. Enter your store name, email, and password." },
+      { title: "Add your products", desc: "Go to Inventory → click 'Add Single Product' or 'Bulk Add Products' to add all your items with their prices and stock counts." },
+      { title: "Start recording sales", desc: "Go to Record Sales or use the POS page to start logging your daily sales." },
+    ]},
+    { icon: "🛒", title: "POS — Point of Sale (Live Selling)", steps: [
+      { title: "Open the POS page", desc: "Click 'POS' in the sidebar. This is your cashier screen for live transactions." },
+      { title: "Scan or search products", desc: "Plug in your USB barcode scanner and scan items — they'll be added to the cart automatically. Or search and click a product." },
+      { title: "Checkout", desc: "Click 'Checkout' when done. The sale is saved and stock is automatically deducted. You can also print the receipt." },
+    ]},
+    { icon: "💰", title: "Recording Sales", steps: [
+      { title: "⚡ Quick Sale", desc: "Enter the date, optional time, and total amount. Best for end-of-day totals." },
+      { title: "🧾 Itemized Sale", desc: "Search and add products one by one. Totals are calculated automatically and stock is deducted when saved." },
+      { title: "📂 Import from Excel", desc: "Download the template, fill it in (date, amount, note, time), then upload it. Great for importing past records." },
+      { title: "🖨️ Print Sales Report", desc: "Select a date range (e.g. June to March) and click Generate Print Preview. Then click Print Now for a hard copy." },
+    ]},
+    { icon: "✏️", title: "Editing & Deleting Sales", steps: [
+      { title: "Edit a record", desc: "In Recent Records, click the ✏️ Edit button next to any sale. You will be asked to enter your password for protection before editing." },
+      { title: "Delete a record", desc: "Click the 🗑️ Delete button next to any sale. You must enter your password to confirm the deletion." },
+    ]},
+    { icon: "📦", title: "Managing Inventory", steps: [
+      { title: "Add expiry date", desc: "When adding a product, fill in the Expiry Date field. Products expiring within 7 days will show an orange warning. Expired products show in red." },
+      { title: "USB Barcode Scanner", desc: "Click the scanner area to activate it, then scan a barcode — it adds +1 stock to that product automatically." },
+      { title: "Adjust stock manually", desc: "Use the + and − buttons or click Edit to set an exact stock count." },
+      { title: "Delete a product", desc: "Click the Delete button next to any product to remove it from your inventory." },
+    ]},
+    { icon: "📈", title: "Understanding the Forecast", steps: [
+      { title: "How it works", desc: "The app uses linear regression on your last 14 days of sales to predict future trends." },
+      { title: "Going UP or DOWN", desc: "If your recent sales trend is going upward, the forecast shows 📈 Going UP. If it's going down, it shows 📉 Going DOWN." },
+      { title: "Switch periods", desc: "On the Forecast page, switch between 7-day, 14-day, and 30-day predictions." },
+    ]},
   ];
 
   return (
@@ -1079,34 +1255,11 @@ function HelpPage() {
           {sec.steps.map((step, i) => (
             <div key={i} className="help-step">
               <div className="help-num">{i + 1}</div>
-              <div className="help-text">
-                <strong>{step.title}</strong>
-                <span>{step.desc}</span>
-              </div>
+              <div className="help-text"><strong>{step.title}</strong><span>{step.desc}</span></div>
             </div>
           ))}
         </div>
       ))}
-      <div className="card">
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-          <div style={{ fontSize: 28 }}>💡</div>
-          <div style={{ fontFamily: "var(--font-h)", fontSize: 17, fontWeight: 800 }}>Quick Tips</div>
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {[
-            "Add products before using POS",
-            "Use POS for live customer transactions",
-            "Use Quick Sale for end-of-day totals",
-            "Import Excel for past sales data",
-            "Scan barcodes to add +1 stock in Inventory",
-            "Need 3+ days of data for forecasts",
-            "Low stock shows in orange, out of stock in red",
-            "Open the app at least once a week to keep it active",
-          ].map((tip, i) => (
-            <span key={i} className="help-badge badge-neutral" style={{ fontSize: 12, padding: "5px 12px" }}>💡 {tip}</span>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
@@ -1141,6 +1294,9 @@ export default function App() {
 
   const logout = async () => { await supabase.auth.signOut(); setUser(null); };
 
+  const handleUpdateSale = (updated) => setSales(prev => prev.map(s => s.id === updated.id ? updated : s));
+  const handleDeleteSale = (id) => setSales(prev => prev.filter(s => s.id !== id));
+
   if (loading) return (<><style>{CSS}</style><div className="loading-screen"><div className="spinner"></div><div style={{ color: "var(--muted)", fontSize: 13 }}>Loading SalesForecast...</div></div></>);
   if (!user) return (<><style>{CSS}</style><LoginPage onLogin={setUser} /></>);
 
@@ -1174,7 +1330,7 @@ export default function App() {
         <main className="main">
           {page === "dashboard" && <Dashboard sales={sales} products={products} />}
           {page === "pos" && <POSPage products={products} onUpdateProducts={setProducts} onAddSale={(s) => setSales([...sales, s])} userId={user.id} />}
-          {page === "sales" && <SalesEntry sales={sales} onAdd={(s) => setSales([...sales, s])} userId={user.id} products={products} onUpdateProducts={setProducts} />}
+          {page === "sales" && <SalesEntry sales={sales} onAdd={(s) => setSales([...sales, s])} onUpdate={handleUpdateSale} onDelete={handleDeleteSale} userId={user.id} products={products} onUpdateProducts={setProducts} userEmail={user.email} />}
           {page === "forecast" && <ForecastPage sales={sales} />}
           {page === "inventory" && <Inventory products={products} onUpdate={setProducts} userId={user.id} />}
           {page === "help" && <HelpPage />}
