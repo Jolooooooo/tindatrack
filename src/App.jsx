@@ -697,10 +697,12 @@ function SalesEntry({ sales, onAdd, onUpdate, onDelete, userId, products, onUpda
     setTimeout(() => setMsg(null), 3000);
   };
 
-  const confirmDelete = async () => {
-    const { error } = await supabase.from("sales").delete().eq("id", deleteTarget.id);
+  const confirmDelete = async (sale) => {
+    const target = sale || deleteTarget;
+    if (!target) return;
+    const { error } = await supabase.from("sales").delete().eq("id", target.id);
     if (error) return;
-    onDelete(deleteTarget.id);
+    onDelete(target.id);
     setDeleteTarget(null);
     setMsg({ type: "success", text: "Sale record deleted ✓" });
     setTimeout(() => setMsg(null), 3000);
@@ -763,7 +765,7 @@ function SalesEntry({ sales, onAdd, onUpdate, onDelete, userId, products, onUpda
           userEmail={userEmail}
           onConfirm={() => {
             if (pwModal.action === "edit") { setEditSale(pwModal.sale); setEditForm({ date: pwModal.sale.date, amount: pwModal.sale.amount, note: pwModal.sale.note || "", time: pwModal.sale.time || "" }); }
-            else { setDeleteTarget(pwModal.sale); confirmDelete(); }
+            else { confirmDelete(pwModal.sale); }
             setPwModal(null);
           }}
           onCancel={() => setPwModal(null)}
