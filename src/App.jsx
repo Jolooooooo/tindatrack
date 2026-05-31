@@ -242,18 +242,15 @@ function ProductSearch({ products, value, onChange, onSelect }) {
 }
 
 // ── PASSWORD CONFIRM MODAL ────────────────────────────────────────────────────
-function PasswordModal({ title, subtitle, onConfirm, onCancel, userEmail }) {
+function PasswordModal({ title, subtitle, onConfirm, onCancel, recordPin }) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(false);
   const [show, setShow] = useState(false);
 
-  const confirm = async () => {
-    if (!pw) return setErr("Enter your password.");
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: userEmail, password: pw });
-    setLoading(false);
-    if (error) { setErr("Wrong password. Try again."); return; }
+  const confirm = () => {
+    if (!pw) return setErr("Enter your record protection password.");
+    if (!recordPin) return setErr("No record protection password set. Please set one in Settings first.");
+    if (pw !== recordPin) { setErr("Wrong password. Try again."); return; }
     onConfirm();
   };
 
@@ -262,8 +259,9 @@ function PasswordModal({ title, subtitle, onConfirm, onCancel, userEmail }) {
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-title">🔐 {title}</div>
         <div className="modal-sub">{subtitle}</div>
+        {!recordPin && <div className="alert alert-warn">⚠️ No record protection password set yet. Go to Settings to create one first.</div>}
         <div className="input-group">
-          <label className="input-label">Enter your password to confirm</label>
+          <label className="input-label">Record protection password</label>
           <div style={{ position: "relative" }}>
             <input className="input-field" type={show ? "text" : "password"} placeholder="••••••••" value={pw}
               onChange={(e) => { setPw(e.target.value); setErr(""); }}
@@ -274,7 +272,7 @@ function PasswordModal({ title, subtitle, onConfirm, onCancel, userEmail }) {
         </div>
         {err && <div className="alert alert-error">{err}</div>}
         <div style={{ display: "flex", gap: 10 }}>
-          <button className="btn btn-primary" onClick={confirm} disabled={loading}>{loading ? "Checking..." : "Confirm →"}</button>
+          <button className="btn btn-primary" onClick={confirm}>Confirm →</button>
           <button className="btn btn-secondary" onClick={onCancel}>Cancel</button>
         </div>
       </div>
@@ -563,7 +561,7 @@ function POSPage({ products, onUpdateProducts, onAddSale, userId }) {
 }
 
 // ── SALES ENTRY ───────────────────────────────────────────────────────────────
-function SalesEntry({ sales, onAdd, onUpdate, onDelete, userId, products, onUpdateProducts, userEmail }) {
+function SalesEntry({ sales, onAdd, onUpdate, onDelete, userId, products, onUpdateProducts, recordPin }) {
   const [tab, setTab] = useState("quick");
   const [msg, setMsg] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -762,7 +760,7 @@ function SalesEntry({ sales, onAdd, onUpdate, onDelete, userId, products, onUpda
         <PasswordModal
           title={pwModal.action === "edit" ? "Confirm Edit" : "Confirm Delete"}
           subtitle={pwModal.action === "edit" ? `You are about to edit a sales record.` : `You are about to permanently delete this sales record.`}
-          userEmail={userEmail}
+          recordPin={recordPin}
           onConfirm={() => {
             if (pwModal.action === "edit") { setEditSale(pwModal.sale); setEditForm({ date: pwModal.sale.date, amount: pwModal.sale.amount, note: pwModal.sale.note || "", time: pwModal.sale.time || "" }); }
             else { confirmDelete(pwModal.sale); }
@@ -1209,6 +1207,128 @@ function Inventory({ products, onUpdate, userId }) {
   );
 }
 
+// ── SETTINGS PAGE ────────────────────────────────────────────────────────────
+function SettingsPage({ user, recordPin, onPinChange }) {
+  const [tab, setTab] = useState("pin");
+  const [currentPin, setCurrentPin] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  // Change login password
+  const [newLoginPw, setNewLoginPw] = useState("");
+  const [confirmLoginPw, setConfirmLoginPw] = useState("");
+  const [showNewLogin, setShowNewLogin] = useState(false);
+  const [showConfirmLogin, setShowConfirmLogin] = useState(false);
+
+  const savePin = async () => {
+    if (recordPin && !currentPin) return setMsg({ type: "error", text: "Enter your current record password first." });
+    if (recordPin && currentPin !== recordPin) return setMsg({ type: "error", text: "Current record password is wrong." });
+    if (!newPin) return setMsg({ type: "error", text: "Enter a new record password." });
+    if (newPin !== confirmPin) return setMsg({ type: "error", text: "Passwords do not match." });
+    setSaving(true);
+    const { error } = await supabase.from("profiles").update({ record_pin: newPin }).eq("id", user.id);
+    setSaving(false);
+    if (error) return setMsg({ type: "error", text: error.message });
+    onPinChange(newPin);
+    setCurrentPin(""); setNewPin(""); setConfirmPin("");
+    setMsg({ type: "success", text: "Record protection password updated successfully ✓" });
+    setTimeout(() => setMsg(null), 3000);
+  };
+
+  const saveLoginPassword = async () => {
+    if (!newLoginPw) return setMsg({ type: "error", text: "Enter a new password." });
+    if (newLoginPw !== confirmLoginPw) return setMsg({ type: "error", text: "Passwords do not match." });
+    if (newLoginPw.length < 6) return setMsg({ type: "error", text: "Password must be at least 6 characters." });
+    setSaving(true);
+    const { error } = await supabase.auth.updateUser({ password: newLoginPw });
+    setSaving(false);
+    if (error) return setMsg({ type: "error", text: error.message });
+    setNewLoginPw(""); setConfirmLoginPw("");
+    setMsg({ type: "success", text: "Login password updated successfully ✓" });
+    setTimeout(() => setMsg(null), 3000);
+  };
+
+  return (
+    <div>
+      <div className="page-header"><div className="page-title">Settings</div><div className="page-sub">Manage your store security and account</div></div>
+
+      <div className="tab-row" style={{ marginBottom: 24 }}>
+        <button className={`tab-btn ${tab === "pin" ? "active" : ""}`} onClick={() => { setTab("pin"); setMsg(null); }}>🔐 Record Password</button>
+        <button className={`tab-btn ${tab === "account" ? "active" : ""}`} onClick={() => { setTab("account"); setMsg(null); }}>👤 Login Password</button>
+      </div>
+
+      {tab === "pin" && (
+        <div className="card" style={{ maxWidth: 480 }}>
+          <div className="card-title">Record Protection Password</div>
+          <div className="alert alert-info" style={{ marginBottom: 20 }}>
+            This password is required when <strong>editing or deleting</strong> any sales record. Keep it separate from your login password for extra security.
+          </div>
+          {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
+          {recordPin ? (
+            <div className="input-group">
+              <label className="input-label">Current record password</label>
+              <div style={{ position: "relative" }}>
+                <input className="input-field" type={showCurrent ? "text" : "password"} placeholder="••••••••" value={currentPin} onChange={e => setCurrentPin(e.target.value)} style={{ paddingRight: 44 }} />
+                <button type="button" onClick={() => setShowCurrent(!showCurrent)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showCurrent ? "🙈" : "👁️"}</button>
+              </div>
+            </div>
+          ) : (
+            <div className="alert alert-warn" style={{ marginBottom: 16 }}>⚠️ No record password set yet. Create one below to protect your sales records.</div>
+          )}
+          <div className="input-group">
+            <label className="input-label">{recordPin ? "New record password" : "Create record password"}</label>
+            <div style={{ position: "relative" }}>
+              <input className="input-field" type={showNew ? "text" : "password"} placeholder="••••••••" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ paddingRight: 44 }} />
+              <button type="button" onClick={() => setShowNew(!showNew)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showNew ? "🙈" : "👁️"}</button>
+            </div>
+          </div>
+          <div className="input-group">
+            <label className="input-label">Confirm new record password</label>
+            <div style={{ position: "relative" }}>
+              <input className="input-field" type={showConfirm ? "text" : "password"} placeholder="••••••••" value={confirmPin} onChange={e => setConfirmPin(e.target.value)} onKeyDown={e => e.key === "Enter" && savePin()} style={{ paddingRight: 44 }} />
+              <button type="button" onClick={() => setShowConfirm(!showConfirm)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showConfirm ? "🙈" : "👁️"}</button>
+            </div>
+          </div>
+          <button className="btn btn-primary" onClick={savePin} disabled={saving}>{saving ? "Saving..." : recordPin ? "Update Record Password →" : "Set Record Password →"}</button>
+        </div>
+      )}
+
+      {tab === "account" && (
+        <div className="card" style={{ maxWidth: 480 }}>
+          <div className="card-title">Change Login Password</div>
+          <div className="alert alert-info" style={{ marginBottom: 20 }}>
+            This changes the password you use to <strong>log in</strong> to SalesForecast.
+          </div>
+          {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
+          <div style={{ marginBottom: 12, padding: "10px 14px", background: "var(--surface)", borderRadius: "var(--r)", border: "1px solid var(--border)", fontSize: 13, color: "var(--muted)" }}>
+            Account: <span style={{ color: "var(--text)" }}>{user.email}</span>
+          </div>
+          <div className="input-group">
+            <label className="input-label">New login password</label>
+            <div style={{ position: "relative" }}>
+              <input className="input-field" type={showNewLogin ? "text" : "password"} placeholder="Min. 6 characters" value={newLoginPw} onChange={e => setNewLoginPw(e.target.value)} style={{ paddingRight: 44 }} />
+              <button type="button" onClick={() => setShowNewLogin(!showNewLogin)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showNewLogin ? "🙈" : "👁️"}</button>
+            </div>
+          </div>
+          <div className="input-group">
+            <label className="input-label">Confirm new login password</label>
+            <div style={{ position: "relative" }}>
+              <input className="input-field" type={showConfirmLogin ? "text" : "password"} placeholder="••••••••" value={confirmLoginPw} onChange={e => setConfirmLoginPw(e.target.value)} onKeyDown={e => e.key === "Enter" && saveLoginPassword()} style={{ paddingRight: 44 }} />
+              <button type="button" onClick={() => setShowConfirmLogin(!showConfirmLogin)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showConfirmLogin ? "🙈" : "👁️"}</button>
+            </div>
+          </div>
+          <button className="btn btn-primary" onClick={saveLoginPassword} disabled={saving}>{saving ? "Saving..." : "Update Login Password →"}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── HELP PAGE ─────────────────────────────────────────────────────────────────
 function HelpPage() {
   const sections = [
@@ -1273,12 +1393,14 @@ export default function App() {
   const [sales, setSales] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [recordPin, setRecordPin] = useState(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
-        const { data: profile } = await supabase.from("profiles").select("store_name").eq("id", session.user.id).single();
+        const { data: profile } = await supabase.from("profiles").select("store_name, record_pin").eq("id", session.user.id).single();
         setUser({ ...session.user, storeName: profile?.store_name || session.user.email });
+        if (profile?.record_pin) setRecordPin(profile.record_pin);
       }
       setLoading(false);
     });
@@ -1308,6 +1430,7 @@ export default function App() {
     { id: "sales", icon: "💰", label: "Record Sales" },
     { id: "forecast", icon: "📈", label: "Forecast" },
     { id: "inventory", icon: "📦", label: "Inventory" },
+    { id: "settings", icon: "⚙️", label: "Settings" },
     { id: "help", icon: "❓", label: "Help" },
   ];
 
@@ -1332,9 +1455,10 @@ export default function App() {
         <main className="main">
           {page === "dashboard" && <Dashboard sales={sales} products={products} />}
           {page === "pos" && <POSPage products={products} onUpdateProducts={setProducts} onAddSale={(s) => setSales([...sales, s])} userId={user.id} />}
-          {page === "sales" && <SalesEntry sales={sales} onAdd={(s) => setSales([...sales, s])} onUpdate={handleUpdateSale} onDelete={handleDeleteSale} userId={user.id} products={products} onUpdateProducts={setProducts} userEmail={user.email} />}
+          {page === "sales" && <SalesEntry sales={sales} onAdd={(s) => setSales([...sales, s])} onUpdate={handleUpdateSale} onDelete={handleDeleteSale} userId={user.id} products={products} onUpdateProducts={setProducts} recordPin={recordPin} />}
           {page === "forecast" && <ForecastPage sales={sales} />}
           {page === "inventory" && <Inventory products={products} onUpdate={setProducts} userId={user.id} />}
+          {page === "settings" && <SettingsPage user={user} recordPin={recordPin} onPinChange={setRecordPin} />}
           {page === "help" && <HelpPage />}
         </main>
       </div>
