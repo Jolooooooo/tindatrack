@@ -282,15 +282,25 @@ function PasswordModal({ title, subtitle, onConfirm, onCancel, recordPin }) {
 
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
 function LoginPage({ onLogin }) {
-  const [mode, setMode] = useState("login");
+  const [mode, setMode] = useState("login"); // login | register | forgot
   const [form, setForm] = useState({ email: "", password: "", storeName: "" });
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
 
   const handle = async () => {
     setErr(""); setLoading(true);
     try {
+      if (mode === "forgot") {
+        if (!form.email) { setErr("Enter your email address."); return; }
+        const { error } = await supabase.auth.resetPasswordForEmail(form.email, {
+          redirectTo: window.location.origin,
+        });
+        if (error) { setErr(error.message); return; }
+        setForgotSent(true);
+        return;
+      }
       if (!form.email || !form.password) { setErr("Please fill in all fields."); return; }
       if (mode === "register") {
         if (!form.storeName) { setErr("Enter your store name."); return; }
@@ -303,8 +313,8 @@ function LoginPage({ onLogin }) {
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
         if (error) { setErr(error.message); return; }
-        const { data: profile } = await supabase.from("profiles").select("store_name").eq("id", data.user.id).single();
-        onLogin({ ...data.user, storeName: profile?.store_name || data.user.email });
+        const { data: profile } = await supabase.from("profiles").select("store_name, record_pin").eq("id", data.user.id).single();
+        onLogin({ ...data.user, storeName: profile?.store_name || data.user.email, record_pin: profile?.record_pin });
       }
     } finally { setLoading(false); }
   };
@@ -313,31 +323,62 @@ function LoginPage({ onLogin }) {
     <div className="login-wrap">
       <div className="login-card">
         <div className="login-logo">SalesForecast</div>
-        <div className="login-sub">{mode === "login" ? "Sign in to your store" : "Create your store account"}</div>
-        {err && <div className="alert alert-error">{err}</div>}
-        {mode === "register" && (
-          <div className="input-group">
-            <label className="input-label">Store name</label>
-            <input className="input-field" placeholder="Aling Nena's Sari-Sari" value={form.storeName} onChange={(e) => setForm({ ...form, storeName: e.target.value })} />
-          </div>
+
+        {mode === "forgot" ? (
+          <>
+            <div className="login-sub">Reset your password</div>
+            {forgotSent ? (
+              <>
+                <div className="alert alert-success">✓ Password reset link sent! Check your email inbox and click the link to reset your password.</div>
+                <button className="btn btn-secondary" style={{ width: "100%", justifyContent: "center", marginTop: 8 }} onClick={() => { setMode("login"); setForgotSent(false); setForm({ email: "", password: "", storeName: "" }); }}>← Back to Sign In</button>
+              </>
+            ) : (
+              <>
+                {err && <div className="alert alert-error">{err}</div>}
+                <div className="alert alert-info" style={{ marginBottom: 16 }}>Enter your registered email and we will send you a password reset link.</div>
+                <div className="input-group">
+                  <label className="input-label">Email</label>
+                  <input className="input-field" type="email" placeholder="you@email.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} onKeyDown={(e) => e.key === "Enter" && handle()} autoFocus />
+                </div>
+                <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={handle} disabled={loading}>{loading ? "Sending..." : "Send Reset Link →"}</button>
+                <div className="login-footer"><a onClick={() => setMode("login")}>← Back to Sign In</a></div>
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="login-sub">{mode === "login" ? "Sign in to your store" : "Create your store account"}</div>
+            {err && <div className="alert alert-error">{err}</div>}
+            {mode === "register" && (
+              <div className="input-group">
+                <label className="input-label">Store name</label>
+                <input className="input-field" placeholder="Aling Nena's Sari-Sari" value={form.storeName} onChange={(e) => setForm({ ...form, storeName: e.target.value })} />
+              </div>
+            )}
+            <div className="input-group">
+              <label className="input-label">Email</label>
+              <input className="input-field" type="email" placeholder="you@email.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} onKeyDown={(e) => e.key === "Enter" && handle()} />
+            </div>
+            <div className="input-group">
+              <label className="input-label">Password</label>
+              <div style={{ position: "relative" }}>
+                <input className="input-field" type={showPass ? "text" : "password"} placeholder="••••••••" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} onKeyDown={(e) => e.key === "Enter" && handle()} style={{ paddingRight: 44 }} />
+                <button type="button" onClick={() => setShowPass(!showPass)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showPass ? "🙈" : "👁️"}</button>
+              </div>
+            </div>
+            {mode === "login" && (
+              <div style={{ textAlign: "right", marginBottom: 12, marginTop: -8 }}>
+                <a onClick={() => { setMode("forgot"); setErr(""); }} style={{ fontSize: 12, color: "var(--accent)", cursor: "pointer" }}>Forgot password?</a>
+              </div>
+            )}
+            <button className="btn btn-primary" style={{ width: "100%", marginTop: 4, justifyContent: "center" }} onClick={handle} disabled={loading}>
+              {loading ? "Please wait..." : mode === "login" ? "Sign in →" : "Create account →"}
+            </button>
+            <div className="login-footer">
+              {mode === "login" ? <>No account? <a onClick={() => setMode("register")}>Register free</a></> : <>Already have one? <a onClick={() => setMode("login")}>Sign in</a></>}
+            </div>
+          </>
         )}
-        <div className="input-group">
-          <label className="input-label">Email</label>
-          <input className="input-field" type="email" placeholder="you@email.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} onKeyDown={(e) => e.key === "Enter" && handle()} />
-        </div>
-        <div className="input-group">
-          <label className="input-label">Password</label>
-          <div style={{ position: "relative" }}>
-            <input className="input-field" type={showPass ? "text" : "password"} placeholder="••••••••" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} onKeyDown={(e) => e.key === "Enter" && handle()} style={{ paddingRight: 44 }} />
-            <button type="button" onClick={() => setShowPass(!showPass)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showPass ? "🙈" : "👁️"}</button>
-          </div>
-        </div>
-        <button className="btn btn-primary" style={{ width: "100%", marginTop: 8, justifyContent: "center" }} onClick={handle} disabled={loading}>
-          {loading ? "Please wait..." : mode === "login" ? "Sign in →" : "Create account →"}
-        </button>
-        <div className="login-footer">
-          {mode === "login" ? <>No account? <a onClick={() => setMode("register")}>Register free</a></> : <>Already have one? <a onClick={() => setMode("login")}>Sign in</a></>}
-        </div>
       </div>
     </div>
   );
@@ -1209,7 +1250,6 @@ function Inventory({ products, onUpdate, userId }) {
 
 // ── SETTINGS PAGE ────────────────────────────────────────────────────────────
 function SettingsPage({ user, recordPin, onPinChange }) {
-  const [tab, setTab] = useState("pin");
   const [currentPin, setCurrentPin] = useState("");
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
@@ -1218,12 +1258,6 @@ function SettingsPage({ user, recordPin, onPinChange }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [msg, setMsg] = useState(null);
   const [saving, setSaving] = useState(false);
-
-  // Change login password
-  const [newLoginPw, setNewLoginPw] = useState("");
-  const [confirmLoginPw, setConfirmLoginPw] = useState("");
-  const [showNewLogin, setShowNewLogin] = useState(false);
-  const [showConfirmLogin, setShowConfirmLogin] = useState(false);
 
   const savePin = async () => {
     if (recordPin && !currentPin) return setMsg({ type: "error", text: "Enter your current record password first." });
@@ -1240,91 +1274,44 @@ function SettingsPage({ user, recordPin, onPinChange }) {
     setTimeout(() => setMsg(null), 3000);
   };
 
-  const saveLoginPassword = async () => {
-    if (!newLoginPw) return setMsg({ type: "error", text: "Enter a new password." });
-    if (newLoginPw !== confirmLoginPw) return setMsg({ type: "error", text: "Passwords do not match." });
-    if (newLoginPw.length < 6) return setMsg({ type: "error", text: "Password must be at least 6 characters." });
-    setSaving(true);
-    const { error } = await supabase.auth.updateUser({ password: newLoginPw });
-    setSaving(false);
-    if (error) return setMsg({ type: "error", text: error.message });
-    setNewLoginPw(""); setConfirmLoginPw("");
-    setMsg({ type: "success", text: "Login password updated successfully ✓" });
-    setTimeout(() => setMsg(null), 3000);
-  };
+
 
   return (
     <div>
-      <div className="page-header"><div className="page-title">Settings</div><div className="page-sub">Manage your store security and account</div></div>
-
-      <div className="tab-row" style={{ marginBottom: 24 }}>
-        <button className={`tab-btn ${tab === "pin" ? "active" : ""}`} onClick={() => { setTab("pin"); setMsg(null); }}>🔐 Record Password</button>
-        <button className={`tab-btn ${tab === "account" ? "active" : ""}`} onClick={() => { setTab("account"); setMsg(null); }}>👤 Login Password</button>
+      <div className="page-header"><div className="page-title">Settings</div><div className="page-sub">Set your record protection password</div></div>
+      <div className="card" style={{ maxWidth: 480 }}>
+        <div className="card-title">🔐 Record Protection Password</div>
+        <div className="alert alert-info" style={{ marginBottom: 20 }}>
+          This password is required when <strong>editing or deleting</strong> any sales record. Only the store owner should know this — employees cannot edit or delete records without it.
+        </div>
+        {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
+        {recordPin ? (
+          <div className="input-group">
+            <label className="input-label">Current record password</label>
+            <div style={{ position: "relative" }}>
+              <input className="input-field" type={showCurrent ? "text" : "password"} placeholder="••••••••" value={currentPin} onChange={e => setCurrentPin(e.target.value)} style={{ paddingRight: 44 }} />
+              <button type="button" onClick={() => setShowCurrent(!showCurrent)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showCurrent ? "🙈" : "👁️"}</button>
+            </div>
+          </div>
+        ) : (
+          <div className="alert alert-warn" style={{ marginBottom: 16 }}>⚠️ No record password set yet. Create one below to protect your sales records.</div>
+        )}
+        <div className="input-group">
+          <label className="input-label">{recordPin ? "New record password" : "Create record password"}</label>
+          <div style={{ position: "relative" }}>
+            <input className="input-field" type={showNew ? "text" : "password"} placeholder="••••••••" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ paddingRight: 44 }} />
+            <button type="button" onClick={() => setShowNew(!showNew)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showNew ? "🙈" : "👁️"}</button>
+          </div>
+        </div>
+        <div className="input-group">
+          <label className="input-label">Confirm new record password</label>
+          <div style={{ position: "relative" }}>
+            <input className="input-field" type={showConfirm ? "text" : "password"} placeholder="••••••••" value={confirmPin} onChange={e => setConfirmPin(e.target.value)} onKeyDown={e => e.key === "Enter" && savePin()} style={{ paddingRight: 44 }} />
+            <button type="button" onClick={() => setShowConfirm(!showConfirm)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showConfirm ? "🙈" : "👁️"}</button>
+          </div>
+        </div>
+        <button className="btn btn-primary" onClick={savePin} disabled={saving}>{saving ? "Saving..." : recordPin ? "Update Record Password →" : "Set Record Password →"}</button>
       </div>
-
-      {tab === "pin" && (
-        <div className="card" style={{ maxWidth: 480 }}>
-          <div className="card-title">Record Protection Password</div>
-          <div className="alert alert-info" style={{ marginBottom: 20 }}>
-            This password is required when <strong>editing or deleting</strong> any sales record. Keep it separate from your login password for extra security.
-          </div>
-          {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
-          {recordPin ? (
-            <div className="input-group">
-              <label className="input-label">Current record password</label>
-              <div style={{ position: "relative" }}>
-                <input className="input-field" type={showCurrent ? "text" : "password"} placeholder="••••••••" value={currentPin} onChange={e => setCurrentPin(e.target.value)} style={{ paddingRight: 44 }} />
-                <button type="button" onClick={() => setShowCurrent(!showCurrent)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showCurrent ? "🙈" : "👁️"}</button>
-              </div>
-            </div>
-          ) : (
-            <div className="alert alert-warn" style={{ marginBottom: 16 }}>⚠️ No record password set yet. Create one below to protect your sales records.</div>
-          )}
-          <div className="input-group">
-            <label className="input-label">{recordPin ? "New record password" : "Create record password"}</label>
-            <div style={{ position: "relative" }}>
-              <input className="input-field" type={showNew ? "text" : "password"} placeholder="••••••••" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ paddingRight: 44 }} />
-              <button type="button" onClick={() => setShowNew(!showNew)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showNew ? "🙈" : "👁️"}</button>
-            </div>
-          </div>
-          <div className="input-group">
-            <label className="input-label">Confirm new record password</label>
-            <div style={{ position: "relative" }}>
-              <input className="input-field" type={showConfirm ? "text" : "password"} placeholder="••••••••" value={confirmPin} onChange={e => setConfirmPin(e.target.value)} onKeyDown={e => e.key === "Enter" && savePin()} style={{ paddingRight: 44 }} />
-              <button type="button" onClick={() => setShowConfirm(!showConfirm)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showConfirm ? "🙈" : "👁️"}</button>
-            </div>
-          </div>
-          <button className="btn btn-primary" onClick={savePin} disabled={saving}>{saving ? "Saving..." : recordPin ? "Update Record Password →" : "Set Record Password →"}</button>
-        </div>
-      )}
-
-      {tab === "account" && (
-        <div className="card" style={{ maxWidth: 480 }}>
-          <div className="card-title">Change Login Password</div>
-          <div className="alert alert-info" style={{ marginBottom: 20 }}>
-            This changes the password you use to <strong>log in</strong> to SalesForecast.
-          </div>
-          {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
-          <div style={{ marginBottom: 12, padding: "10px 14px", background: "var(--surface)", borderRadius: "var(--r)", border: "1px solid var(--border)", fontSize: 13, color: "var(--muted)" }}>
-            Account: <span style={{ color: "var(--text)" }}>{user.email}</span>
-          </div>
-          <div className="input-group">
-            <label className="input-label">New login password</label>
-            <div style={{ position: "relative" }}>
-              <input className="input-field" type={showNewLogin ? "text" : "password"} placeholder="Min. 6 characters" value={newLoginPw} onChange={e => setNewLoginPw(e.target.value)} style={{ paddingRight: 44 }} />
-              <button type="button" onClick={() => setShowNewLogin(!showNewLogin)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showNewLogin ? "🙈" : "👁️"}</button>
-            </div>
-          </div>
-          <div className="input-group">
-            <label className="input-label">Confirm new login password</label>
-            <div style={{ position: "relative" }}>
-              <input className="input-field" type={showConfirmLogin ? "text" : "password"} placeholder="••••••••" value={confirmLoginPw} onChange={e => setConfirmLoginPw(e.target.value)} onKeyDown={e => e.key === "Enter" && saveLoginPassword()} style={{ paddingRight: 44 }} />
-              <button type="button" onClick={() => setShowConfirmLogin(!showConfirmLogin)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showConfirmLogin ? "🙈" : "👁️"}</button>
-            </div>
-          </div>
-          <button className="btn btn-primary" onClick={saveLoginPassword} disabled={saving}>{saving ? "Saving..." : "Update Login Password →"}</button>
-        </div>
-      )}
     </div>
   );
 }
@@ -1395,6 +1382,11 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [recordPin, setRecordPin] = useState(null);
 
+  const handleLogin = (userData) => {
+    setUser(userData);
+    if (userData.record_pin) setRecordPin(userData.record_pin);
+  };
+
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
@@ -1422,7 +1414,7 @@ export default function App() {
   const handleDeleteSale = (id) => setSales(prev => prev.filter(s => s.id !== id));
 
   if (loading) return (<><style>{CSS}</style><div className="loading-screen"><div className="spinner"></div><div style={{ color: "var(--muted)", fontSize: 13 }}>Loading SalesForecast...</div></div></>);
-  if (!user) return (<><style>{CSS}</style><LoginPage onLogin={setUser} /></>);
+  if (!user) return (<><style>{CSS}</style><LoginPage onLogin={handleLogin} /></>);
 
   const NAV = [
     { id: "dashboard", icon: "📊", label: "Dashboard" },
