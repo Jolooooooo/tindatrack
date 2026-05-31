@@ -1248,6 +1248,55 @@ function Inventory({ products, onUpdate, userId }) {
   );
 }
 
+// ── RESET PASSWORD PAGE ───────────────────────────────────────────────────────
+function ResetPasswordPage({ onDone }) {
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const save = async () => {
+    if (!newPw) return setMsg({ type: "error", text: "Enter a new password." });
+    if (newPw.length < 6) return setMsg({ type: "error", text: "Password must be at least 6 characters." });
+    if (newPw !== confirmPw) return setMsg({ type: "error", text: "Passwords do not match." });
+    setLoading(true);
+    const { error } = await supabase.auth.updateUser({ password: newPw });
+    setLoading(false);
+    if (error) return setMsg({ type: "error", text: error.message });
+    setMsg({ type: "success", text: "✓ Password changed successfully! Redirecting to login..." });
+    setTimeout(() => onDone(), 2500);
+  };
+
+  return (
+    <div className="login-wrap">
+      <div className="login-card">
+        <div className="login-logo">SalesForecast</div>
+        <div className="login-sub">Set your new password</div>
+        {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
+        <div className="input-group">
+          <label className="input-label">New password</label>
+          <div style={{ position: "relative" }}>
+            <input className="input-field" type={showNew ? "text" : "password"} placeholder="Min. 6 characters" value={newPw} onChange={e => setNewPw(e.target.value)} style={{ paddingRight: 44 }} autoFocus />
+            <button type="button" onClick={() => setShowNew(!showNew)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showNew ? "🙈" : "👁️"}</button>
+          </div>
+        </div>
+        <div className="input-group">
+          <label className="input-label">Confirm new password</label>
+          <div style={{ position: "relative" }}>
+            <input className="input-field" type={showConfirm ? "text" : "password"} placeholder="••••••••" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} onKeyDown={e => e.key === "Enter" && save()} style={{ paddingRight: 44 }} />
+            <button type="button" onClick={() => setShowConfirm(!showConfirm)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showConfirm ? "🙈" : "👁️"}</button>
+          </div>
+        </div>
+        <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={save} disabled={loading}>
+          {loading ? "Saving..." : "Set New Password →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── SETTINGS PAGE ────────────────────────────────────────────────────────────
 function SettingsPage({ user, recordPin, onPinChange }) {
   const [currentPin, setCurrentPin] = useState("");
@@ -1381,6 +1430,7 @@ export default function App() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [recordPin, setRecordPin] = useState(null);
+  const [resetMode, setResetMode] = useState(false);
 
   const handleLogin = (userData) => {
     setUser(userData);
@@ -1396,8 +1446,9 @@ export default function App() {
       }
       setLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) { setUser(null); setSales([]); setProducts([]); }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") { setResetMode(true); setLoading(false); }
+      else if (!session) { setUser(null); setSales([]); setProducts([]); setResetMode(false); }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -1414,6 +1465,7 @@ export default function App() {
   const handleDeleteSale = (id) => setSales(prev => prev.filter(s => s.id !== id));
 
   if (loading) return (<><style>{CSS}</style><div className="loading-screen"><div className="spinner"></div><div style={{ color: "var(--muted)", fontSize: 13 }}>Loading SalesForecast...</div></div></>);
+  if (resetMode) return (<><style>{CSS}</style><ResetPasswordPage onDone={() => { setResetMode(false); supabase.auth.signOut(); }} /></>);
   if (!user) return (<><style>{CSS}</style><LoginPage onLogin={handleLogin} /></>);
 
   const NAV = [
