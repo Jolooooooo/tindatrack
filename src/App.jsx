@@ -1248,6 +1248,114 @@ function Inventory({ products, onUpdate, userId }) {
   );
 }
 
+// ── ADMIN PAGE ────────────────────────────────────────────────────────────────
+function AdminPage({ user, recordPin, onPinChange }) {
+  const [verified, setVerified] = useState(!recordPin);
+  const [verifyPw, setVerifyPw] = useState("");
+  const [verifyErr, setVerifyErr] = useState("");
+  const [showVerify, setShowVerify] = useState(false);
+  const [currentPin, setCurrentPin] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const verify = () => {
+    if (verifyPw !== recordPin) return setVerifyErr("Wrong record protection password.");
+    setVerified(true);
+  };
+
+  const savePin = async () => {
+    if (recordPin && currentPin !== recordPin) return setMsg({ type: "error", text: "Current record password is wrong." });
+    if (!newPin) return setMsg({ type: "error", text: "Enter a new record password." });
+    if (newPin !== confirmPin) return setMsg({ type: "error", text: "Passwords do not match." });
+    setSaving(true);
+    const { error } = await supabase.from("profiles").update({ record_pin: newPin }).eq("id", user.id);
+    setSaving(false);
+    if (error) return setMsg({ type: "error", text: error.message });
+    onPinChange(newPin);
+    setCurrentPin(""); setNewPin(""); setConfirmPin("");
+    setMsg({ type: "success", text: "✓ Record protection password updated successfully!" });
+    setTimeout(() => setMsg(null), 3000);
+  };
+
+  if (!user) return (
+    <div className="login-wrap">
+      <div className="login-card">
+        <div className="login-logo">SalesForecast</div>
+        <div className="login-sub">Admin access requires login</div>
+        <div className="alert alert-warn">Please log in first, then visit this page.</div>
+        <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={() => window.location.href = "/"}>Go to Login →</button>
+      </div>
+    </div>
+  );
+
+  if (!verified) return (
+    <div className="login-wrap">
+      <div className="login-card">
+        <div className="login-logo">SalesForecast</div>
+        <div className="login-sub">Admin — Owner Access Only</div>
+        <div className="alert alert-warn" style={{ marginBottom: 20 }}>⚠️ This page is for store owners only. Enter your record protection password to continue.</div>
+        {verifyErr && <div className="alert alert-error">{verifyErr}</div>}
+        <div className="input-group">
+          <label className="input-label">Record protection password</label>
+          <div style={{ position: "relative" }}>
+            <input className="input-field" type={showVerify ? "text" : "password"} placeholder="••••••••" value={verifyPw}
+              onChange={e => { setVerifyPw(e.target.value); setVerifyErr(""); }}
+              onKeyDown={e => e.key === "Enter" && verify()} autoFocus style={{ paddingRight: 44 }} />
+            <button type="button" onClick={() => setShowVerify(!showVerify)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showVerify ? "🙈" : "👁️"}</button>
+          </div>
+        </div>
+        <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={verify}>Enter Admin →</button>
+        <div className="login-footer"><a onClick={() => window.location.href = "/"}>← Back to app</a></div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="login-wrap">
+      <div className="login-card" style={{ width: 460 }}>
+        <div className="login-logo">SalesForecast</div>
+        <div className="login-sub">Admin — Record Password Settings</div>
+        <div className="alert alert-info" style={{ marginBottom: 20 }}>
+          Only the store owner should know this page exists. This password protects editing and deleting sales records.
+        </div>
+        {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
+        {recordPin && (
+          <div className="input-group">
+            <label className="input-label">Current record password</label>
+            <div style={{ position: "relative" }}>
+              <input className="input-field" type={showCurrent ? "text" : "password"} placeholder="••••••••" value={currentPin} onChange={e => setCurrentPin(e.target.value)} style={{ paddingRight: 44 }} />
+              <button type="button" onClick={() => setShowCurrent(!showCurrent)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showCurrent ? "🙈" : "👁️"}</button>
+            </div>
+          </div>
+        )}
+        <div className="input-group">
+          <label className="input-label">{recordPin ? "New record password" : "Create record password"}</label>
+          <div style={{ position: "relative" }}>
+            <input className="input-field" type={showNew ? "text" : "password"} placeholder="••••••••" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ paddingRight: 44 }} />
+            <button type="button" onClick={() => setShowNew(!showNew)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showNew ? "🙈" : "👁️"}</button>
+          </div>
+        </div>
+        <div className="input-group">
+          <label className="input-label">Confirm new record password</label>
+          <div style={{ position: "relative" }}>
+            <input className="input-field" type={showConfirm ? "text" : "password"} placeholder="••••••••" value={confirmPin} onChange={e => setConfirmPin(e.target.value)} onKeyDown={e => e.key === "Enter" && savePin()} style={{ paddingRight: 44 }} />
+            <button type="button" onClick={() => setShowConfirm(!showConfirm)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 16, padding: 4 }}>{showConfirm ? "🙈" : "👁️"}</button>
+          </div>
+        </div>
+        <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={savePin} disabled={saving}>
+          {saving ? "Saving..." : recordPin ? "Update Record Password →" : "Set Record Password →"}
+        </button>
+        <div className="login-footer"><a onClick={() => window.location.href = "/"}>← Back to app</a></div>
+      </div>
+    </div>
+  );
+}
+
 // ── RESET PASSWORD PAGE ───────────────────────────────────────────────────────
 function ResetPasswordPage({ onDone }) {
   const [newPw, setNewPw] = useState("");
@@ -1431,6 +1539,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [recordPin, setRecordPin] = useState(null);
   const [resetMode, setResetMode] = useState(false);
+  const isAdminPage = window.location.pathname === "/admin";
 
   const handleLogin = (userData) => {
     setUser(userData);
@@ -1466,6 +1575,7 @@ export default function App() {
 
   if (loading) return (<><style>{CSS}</style><div className="loading-screen"><div className="spinner"></div><div style={{ color: "var(--muted)", fontSize: 13 }}>Loading SalesForecast...</div></div></>);
   if (resetMode) return (<><style>{CSS}</style><ResetPasswordPage onDone={() => { setResetMode(false); supabase.auth.signOut(); }} /></>);
+  if (isAdminPage) return (<><style>{CSS}</style><AdminPage user={user} recordPin={recordPin} onPinChange={setRecordPin} /></>);
   if (!user) return (<><style>{CSS}</style><LoginPage onLogin={handleLogin} /></>);
 
   const NAV = [
@@ -1474,7 +1584,6 @@ export default function App() {
     { id: "sales", icon: "💰", label: "Record Sales" },
     { id: "forecast", icon: "📈", label: "Forecast" },
     { id: "inventory", icon: "📦", label: "Inventory" },
-    { id: "settings", icon: "⚙️", label: "Settings" },
     { id: "help", icon: "❓", label: "Help" },
   ];
 
@@ -1497,12 +1606,13 @@ export default function App() {
           </div>
         </nav>
         <main className="main">
+
           {page === "dashboard" && <Dashboard sales={sales} products={products} />}
           {page === "pos" && <POSPage products={products} onUpdateProducts={setProducts} onAddSale={(s) => setSales([...sales, s])} userId={user.id} />}
           {page === "sales" && <SalesEntry sales={sales} onAdd={(s) => setSales([...sales, s])} onUpdate={handleUpdateSale} onDelete={handleDeleteSale} userId={user.id} products={products} onUpdateProducts={setProducts} recordPin={recordPin} />}
           {page === "forecast" && <ForecastPage sales={sales} />}
           {page === "inventory" && <Inventory products={products} onUpdate={setProducts} userId={user.id} />}
-          {page === "settings" && <SettingsPage user={user} recordPin={recordPin} onPinChange={setRecordPin} />}
+          
           {page === "help" && <HelpPage />}
         </main>
       </div>
