@@ -1452,23 +1452,37 @@ function ManageEmployees({ user }) {
     if (!form.email || !form.password) return setMsg({ type: "error", text: "Fill in email and password." });
     if (form.password.length < 6) return setMsg({ type: "error", text: "Password must be at least 6 characters." });
     setSaving(true);
-    // Sign up employee
+    // Sign up employee - store current session first
+    const { data: currentSession } = await supabase.auth.getSession();
     const { data, error } = await supabase.auth.signUp({ email: form.email, password: form.password });
     if (error) { setSaving(false); return setMsg({ type: "error", text: error.message }); }
     if (data.user) {
-      // Create profile linked to owner
-      await supabase.from("profiles").upsert({
+      // Insert employee profile - use owner_id to link to this store
+      const { error: profileError } = await supabase.from("profiles").insert({
         id: data.user.id,
         store_name: user.storeName,
         owner_id: user.id,
         role: "employee"
       });
+      if (profileError) {
+        // Try upsert if insert fails
+        await supabase.from("profiles").upsert({
+          id: data.user.id,
+          store_name: user.storeName,
+          owner_id: user.id,
+          role: "employee"
+        });
+      }
+      // Restore owner session if it was changed
+      if (currentSession?.session) {
+        await supabase.auth.setSession(currentSession.session);
+      }
       setEmployees(prev => [...prev, { id: data.user.id, store_name: user.storeName, role: "employee", email: form.email }]);
-      setMsg({ type: "success", text: `✓ Employee account created for ${form.email}` });
+      setMsg({ type: "success", text: `✓ Employee account created! They can now log in with ${form.email}` });
       setForm({ email: "", password: "", name: "" });
     }
     setSaving(false);
-    setTimeout(() => setMsg(null), 4000);
+    setTimeout(() => setMsg(null), 5000);
   };
 
   const deleteEmployee = async (emp) => {
