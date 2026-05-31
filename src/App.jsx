@@ -289,7 +289,7 @@ function LoginPage({ onLogin }) {
   const [showPass, setShowPass] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
 
-  const handle = async () => {
+  const handle = async (role = "owner") => {
     setErr(""); setLoading(true);
     try {
       if (mode === "forgot") {
@@ -308,13 +308,13 @@ function LoginPage({ onLogin }) {
         if (error) { setErr(error.message); return; }
         if (data.user) {
           await supabase.from("profiles").upsert({ id: data.user.id, store_name: form.storeName });
-          onLogin({ ...data.user, storeName: form.storeName });
+          onLogin({ ...data.user, storeName: form.storeName, role: "owner" });
         } else { setErr("Check your email to confirm your account, then sign in."); }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
         if (error) { setErr(error.message); return; }
         const { data: profile } = await supabase.from("profiles").select("store_name, record_pin").eq("id", data.user.id).single();
-        onLogin({ ...data.user, storeName: profile?.store_name || data.user.email, record_pin: profile?.record_pin });
+        onLogin({ ...data.user, storeName: profile?.store_name || data.user.email, record_pin: profile?.record_pin, role });
       }
     } finally { setLoading(false); }
   };
@@ -371,9 +371,22 @@ function LoginPage({ onLogin }) {
                 <a onClick={() => { setMode("forgot"); setErr(""); }} style={{ fontSize: 12, color: "var(--accent)", cursor: "pointer" }}>Forgot password?</a>
               </div>
             )}
-            <button className="btn btn-primary" style={{ width: "100%", marginTop: 4, justifyContent: "center" }} onClick={handle} disabled={loading}>
-              {loading ? "Please wait..." : mode === "login" ? "Sign in →" : "Create account →"}
-            </button>
+            {mode === "login" ? (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 4 }}>
+                <button className="btn btn-primary" style={{ justifyContent: "center", flexDirection: "column", padding: "14px", gap: 4 }} onClick={() => handle("owner")} disabled={loading}>
+                  <span style={{ fontSize: 20 }}>👑</span>
+                  <span style={{ fontSize: 13 }}>{loading ? "..." : "Owner"}</span>
+                </button>
+                <button className="btn btn-secondary" style={{ justifyContent: "center", flexDirection: "column", padding: "14px", gap: 4 }} onClick={() => handle("employee")} disabled={loading}>
+                  <span style={{ fontSize: 20 }}>👤</span>
+                  <span style={{ fontSize: 13 }}>{loading ? "..." : "Employee"}</span>
+                </button>
+              </div>
+            ) : (
+              <button className="btn btn-primary" style={{ width: "100%", marginTop: 4, justifyContent: "center" }} onClick={() => handle("owner")} disabled={loading}>
+                {loading ? "Please wait..." : "Create account →"}
+              </button>
+            )}
             <div className="login-footer">
               {mode === "login" ? <>No account? <a onClick={() => setMode("register")}>Register free</a></> : <>Already have one? <a onClick={() => setMode("login")}>Sign in</a></>}
             </div>
@@ -602,7 +615,7 @@ function POSPage({ products, onUpdateProducts, onAddSale, userId }) {
 }
 
 // ── SALES ENTRY ───────────────────────────────────────────────────────────────
-function SalesEntry({ sales, onAdd, onUpdate, onDelete, userId, products, onUpdateProducts, recordPin }) {
+function SalesEntry({ sales, onAdd, onUpdate, onDelete, userId, products, onUpdateProducts, recordPin, isOwner }) {
   const [tab, setTab] = useState("quick");
   const [msg, setMsg] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -724,8 +737,27 @@ function SalesEntry({ sales, onAdd, onUpdate, onDelete, userId, products, onUpda
   const doPrint = () => window.print();
 
   // Edit sale
-  const startEdit = (sale) => setPwModal({ action: "edit", sale });
-  const startDelete = (sale) => setPwModal({ action: "delete", sale });
+  const startEdit = (sale) => {
+    if (isOwner) {
+      // Owner skips password — go directly to edit
+      setEditSale(sale);
+      setEditForm({ date: sale.date, amount: sale.amount, note: sale.note || "", time: sale.time || "" });
+    } else {
+      // Employee must enter record protection password
+      if (!recordPin) return alert("No record protection password set. Ask the owner to set one first.");
+      setPwModal({ action: "edit", sale });
+    }
+  };
+  const startDelete = (sale) => {
+    if (isOwner) {
+      // Owner skips password — confirm with simple confirm dialog
+      if (window.confirm("Delete this sales record?")) confirmDelete(sale);
+    } else {
+      // Employee must enter record protection password
+      if (!recordPin) return alert("No record protection password set. Ask the owner to set one first.");
+      setPwModal({ action: "delete", sale });
+    }
+  };
 
   const confirmEdit = async () => {
     const { error } = await supabase.from("sales").update({ date: editForm.date, amount: Number(editForm.amount), note: editForm.note, time: editForm.time || null }).eq("id", editSale.id);
@@ -1539,11 +1571,13 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [recordPin, setRecordPin] = useState(null);
   const [resetMode, setResetMode] = useState(false);
+  const [userRole, setUserRole] = useState("employee");
   const isAdminPage = window.location.pathname === "/admin";
 
   const handleLogin = (userData) => {
     setUser(userData);
     if (userData.record_pin) setRecordPin(userData.record_pin);
+    if (userData.role) setUserRole(userData.role);
   };
 
   useEffect(() => {
@@ -1584,6 +1618,7 @@ export default function App() {
     { id: "sales", icon: "💰", label: "Record Sales" },
     { id: "forecast", icon: "📈", label: "Forecast" },
     { id: "inventory", icon: "📦", label: "Inventory" },
+    ...(userRole === "owner" ? [{ id: "settings", icon: "⚙️", label: "Settings" }] : []),
     { id: "help", icon: "❓", label: "Help" },
   ];
 
@@ -1601,7 +1636,14 @@ export default function App() {
             </div>
           ))}
           <div className="sidebar-bottom">
-            <div className="user-info"><span>{user.storeName}</span></div>
+            <div className="user-info">
+              <span>{user.storeName}</span>
+              <div style={{ marginTop: 4 }}>
+                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 99, background: userRole === "owner" ? "rgba(181,242,62,0.15)" : "rgba(107,117,112,0.2)", color: userRole === "owner" ? "var(--accent)" : "var(--muted)", fontWeight: 600, letterSpacing: "0.5px" }}>
+                  {userRole === "owner" ? "👑 Owner" : "👤 Employee"}
+                </span>
+              </div>
+            </div>
             <button className="logout-btn" onClick={logout}>🚪 <span>Sign out</span></button>
           </div>
         </nav>
@@ -1609,10 +1651,11 @@ export default function App() {
 
           {page === "dashboard" && <Dashboard sales={sales} products={products} />}
           {page === "pos" && <POSPage products={products} onUpdateProducts={setProducts} onAddSale={(s) => setSales([...sales, s])} userId={user.id} />}
-          {page === "sales" && <SalesEntry sales={sales} onAdd={(s) => setSales([...sales, s])} onUpdate={handleUpdateSale} onDelete={handleDeleteSale} userId={user.id} products={products} onUpdateProducts={setProducts} recordPin={recordPin} />}
+          {page === "sales" && <SalesEntry sales={sales} onAdd={(s) => setSales([...sales, s])} onUpdate={handleUpdateSale} onDelete={handleDeleteSale} userId={user.id} products={products} onUpdateProducts={setProducts} recordPin={recordPin} isOwner={userRole === "owner"} />}
           {page === "forecast" && <ForecastPage sales={sales} />}
           {page === "inventory" && <Inventory products={products} onUpdate={setProducts} userId={user.id} />}
           
+          {page === "settings" && userRole === "owner" && <SettingsPage user={user} recordPin={recordPin} onPinChange={setRecordPin} />}
           {page === "help" && <HelpPage />}
         </main>
       </div>
